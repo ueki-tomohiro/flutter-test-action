@@ -103,3 +103,10 @@ See the [actions tab](https://github.com/actions/typescript-action/actions) for 
 ## Usage:
 
 After testing you can [create a v1 tag](https://github.com/actions/toolkit/blob/master/docs/action-versioning.md) to reference the stable and latest V1 action
+
+https://zenn.dev/uniocto/articles/194fc5fd54fedc
+https://github.com/apastuhov/dart_dot_reporter/blob/master/lib/parser.dart
+https://tech.andpad.co.jp/entry/2020/11/17/170000
+https://qiita.com/kasa_le/items/3ce281bf713404a4e8c8
+https://github.com/TOPdesk/dart-junitreport/blob/master/lib/src/impl/report.dart
+https://github.com/windyroad/JUnit-Schema/blob/master/JUnit.xsd
