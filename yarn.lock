@@ -654,10 +654,10 @@
   resolved "https://registry.yarnpkg.com/@types/json5/-/json5-0.0.29.tgz#ee28707ae94e11d2b827bcbe5270bcea7f3e71ee"
   integrity sha1-7ihweulOEdK4J7y+UnC86n8+ce4=
 
-"@types/node@*", "@types/node@^16.10.5":
-  version "16.11.4"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-16.11.4.tgz#90771124822d6663814f7c1c9b45a6654d8fd964"
-  integrity sha512-TMgXmy0v2xWyuCSCJM6NCna2snndD8yvQF67J29ipdzMcsPa9u+o0tjF5+EQNdhcuZplYuouYqpc4zcd5I6amQ==
+"@types/node@*", "@types/node@^16.11.6":
+  version "16.11.6"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-16.11.6.tgz#6bef7a2a0ad684cf6e90fcfe31cecabd9ce0a3ae"
+  integrity sha512-ua7PgUoeQFjmWPcoo9khiPum3Pd60k4/2ZGXt18sm2Slk0W0xZTqt5Y0Ny1NyBiN1EVQ/+FaF9NcY4Qe6rwk5w==
 
 "@types/prettier@^2.1.5":
   version "2.4.1"
@@ -1532,7 +1532,7 @@ eslint-plugin-import@^2.24.2:
     resolve "^1.20.0"
     tsconfig-paths "^3.11.0"
 
-eslint-plugin-jest@^25.0.5:
+eslint-plugin-jest@^25.2.2:
   version "25.2.2"
   resolved "https://registry.yarnpkg.com/eslint-plugin-jest/-/eslint-plugin-jest-25.2.2.tgz#aada85113268e79d4e7423f8ad4e1b740f112e71"
   integrity sha512-frn5yhOF60U4kcqozO3zKTNZQUk+mfx037XOy2iiYL8FhorEkuCuL3/flzKcY1ECDP2WYT9ydmvlO3fRW9o4mg==
@@ -3517,7 +3517,7 @@ tr46@^2.1.0:
   dependencies:
     punycode "^2.1.1"
 
-ts-jest@^27.0.5:
+ts-jest@^27.0.7:
   version "27.0.7"
   resolved "https://registry.yarnpkg.com/ts-jest/-/ts-jest-27.0.7.tgz#fb7c8c8cb5526ab371bc1b23d06e745652cca2d0"
   integrity sha512-O41shibMqzdafpuP+CkrOL7ykbmLh+FqQrXEmV9CydQ5JBk0Sj0uAEF5TNNe94fZWKm3yYvWa/IbyV4Yg1zK2Q==
