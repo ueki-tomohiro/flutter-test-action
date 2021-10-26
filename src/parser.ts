@@ -1,17 +1,23 @@
 import * as core from '@actions/core'
 import * as os from 'os'
-import {readFile, stat} from 'fs/promises'
-import {TestModel} from './model/testmodel'
+import {TestDone, TestDoneFromJSON} from './model/testdone'
+import {TestSuite, TestSuiteFromJSON} from './model/testsuite'
+import {TestGroupFromJSON} from './model/testgroup'
+import {TestStartFromJSON} from './model/teststart'
+import format from 'xml-formatter'
+import {promises} from 'fs'
+
+const {readFile, stat} = promises
 
 export class Parser {
   readonly inputPath: string
-  tests: Map<number, TestModel> = new Map<number, TestModel>()
+  tests: TestSuite[] = []
 
   constructor(inputPath: string) {
     this.inputPath = inputPath
   }
 
-  async load(): Promise<string> {
+  async _load(): Promise<string> {
     return new Promise<string>(async resolve => {
       try {
         await stat(this.inputPath)
@@ -22,9 +28,9 @@ export class Parser {
     })
   }
 
-  async parseObject(): Promise<Map<number, TestModel>> {
-    const file = await this.load()
-    const lines = file.split(os.EOL)
+  async parseObject(): Promise<TestSuite[]> {
+    const file = await this._load()
+    const lines = file.split(os.EOL).filter(line => line.length > 0)
 
     for (const line of lines) {
       this._parseLine(line)
@@ -36,7 +42,9 @@ export class Parser {
   _parseLine(line: string): void {
     try {
       const json = JSON.parse(line)
-      if (json.containsKey('type')) {
+      if (json['type']) {
+        this._parseTestSuite(json)
+        this._parseTestGroup(json)
         this._parseTestStart(json)
         this._parseTestError(json)
         this._parseTestMessage(json)
@@ -48,66 +56,81 @@ export class Parser {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _parseTestSuite(line: any): void {
+    if (line['type'] === 'suite') {
+      this.tests.push(TestSuiteFromJSON(line))
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _parseTestGroup(line: any): void {
+    if (line['type'] === 'group') {
+      const group = TestGroupFromJSON(line)
+      const test = this.tests.find(t => t.id === group.suiteId)
+      if (!test) return
+      test.groups.push(group)
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _parseTestStart(line: any): void {
     if (line['type'] === 'testStart') {
-      const id: number = line['test']['id']
       const name: string = line['test']['name']
 
       if (name.startsWith('loading /')) {
         return
       }
-
-      let model = this.tests.get(id)
-      if (model == null) {
-        model = new TestModel()
-      }
-      model.id = id
-      model.name = name
-      if (line['test']['metadata']['skip']) {
-        model.state = 'skipped'
-      }
+      const start = TestStartFromJSON(line)
+      const test = this.tests.find(t => t.id === start.suiteId)
+      if (!test) return
+      const group = test.findTestGroup(start.groupIds)
+      if (!group) return
+      group.tests.push(start)
     }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _parseTestError(line: any): void {
     if (line['type'] === 'error') {
-      const id: number = line['testID']
-      const error: string = line['error']
-
-      const model = this.tests.get(id)
-      if (model != null) {
-        if (!error.startsWith('Test failed. See exception logs above.')) {
-          model.error = error.endsWith('\n') ? '\t$error' : '\t$error\n'
-        }
-      }
+      this._checkResult(TestDoneFromJSON(line))
     }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _parseTestMessage(line: any): void {
     if (line['type'] === 'print') {
-      const id: number = line['testID']
-      const message: string = line['message']
-
-      const model = this.tests.get(id)
-      if (model != null && message != null) {
-        model.message = '\t$message\n'
-      }
+      this._checkResult(TestDoneFromJSON(line))
     }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _parseTestDone(line: any): void {
     if (line['type'] === 'testDone') {
-      const id: number = line['testID']
-
-      const model = this.tests.get(id)
-      if (model != null && model.state == null) {
-        model.state = line['result'] === 'success' ? 'success' : 'failure'
-      }
+      this._checkResult(TestDoneFromJSON(line))
     }
   }
 
-  async toUnit(): Promise<string> {}
+  _checkResult(result: TestDone): void {
+    const test = this.tests.find(t => t.findTestStart(result.id))
+    if (!test) return
+    const start = test.findTestStart(result.id)
+    if (!start) return
+    if (!start.result) {
+      start.result = result
+    }
+  }
+
+  toUnit(): string {
+    const lines: string[] = [
+      `<?xml version="1.0" encoding="UTF-8"?>`,
+      '<testsuites>'
+    ]
+
+    for (const model of this.tests) {
+      lines.push(model.toUnit())
+    }
+
+    lines.push('</testsuites>')
+    return format(lines.join('\n'))
+  }
 }
