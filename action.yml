@@ -1,11 +1,13 @@
-name: 'Your name here'
-description: 'Provide a description here'
-author: 'Your name or organization here'
+name: 'Tomohiro Ueki'
+description: 'flutter test export tool'
+author: 'Tomohiro Ueki'
 inputs:
-  milliseconds: # change this
+  inoutPath:
     required: true
-    description: 'input description here'
-    default: 'default value if applicable'
+    description: 'input flutter test --machine result path'
+  outputPath:
+    required: true
+    description: 'export unit xml path'
 runs:
   using: 'node12'
   main: 'dist/index.js'
