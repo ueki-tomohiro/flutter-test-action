@@ -5,7 +5,7 @@
     "parserOptions": {
       "ecmaVersion": 9,
       "sourceType": "module",
-      "project": "./tsconfig.json"
+      "project": "./tsconfig.eslint.json"
     },
     "rules": {
       "i18n-text/no-en": "off",
@@ -47,6 +47,14 @@
       "@typescript-eslint/type-annotation-spacing": "error",
       "@typescript-eslint/unbound-method": "error"
     },
+    "overrides": [
+      {
+        "files": ["*.test.ts"],
+        "rules": {
+          "filenames/match-regex": "off"
+        }
+      }
+    ],
     "env": {
       "node": true,
       "es6": true,
