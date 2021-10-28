@@ -27,7 +27,8 @@ export class Parser {
     return new Promise<string>(async resolve => {
       try {
         await stat(this.inputPath)
-        resolve(Buffer.from(await readFile(this.inputPath)).toString('utf8'))
+        const buf = await readFile(this.inputPath)
+        resolve(Buffer.alloc(buf.length, buf).toString('utf8'))
       } catch (error) {
         core.error((error as Error).message)
       }

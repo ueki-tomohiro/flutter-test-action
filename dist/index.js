@@ -550,7 +550,8 @@ class Parser {
             return new Promise((resolve) => __awaiter(this, void 0, void 0, function* () {
                 try {
                     yield stat(this.inputPath);
-                    resolve(Buffer.from(yield readFile(this.inputPath)).toString('utf8'));
+                    const buf = yield readFile(this.inputPath);
+                    resolve(Buffer.alloc(buf.length, buf).toString('utf8'));
                 }
                 catch (error) {
                     core.error(error.message);
