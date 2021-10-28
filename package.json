@@ -29,7 +29,7 @@
     "@actions/github": "^5.0.0",
     "@octokit/action": "^3.18.0",
     "@primer/octicons": "^16.1.1",
-    "typed-octicons": "^9.4.0",
+    "@primer/styled-octicons": "^16.1.1",
     "xml-formatter": "^2.5.1"
   },
   "devDependencies": {
