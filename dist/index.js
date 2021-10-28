@@ -141,7 +141,7 @@ function run() {
             const inputPath = core.getInput('inputPath');
             const parser = new parser_1.Parser(inputPath);
             yield parser.parseObject();
-            (0, formatter_1.exportReport)(parser.toReport());
+            yield (0, formatter_1.exportReport)(parser.toReport());
         }
         catch (error) {
             if (error instanceof Error)

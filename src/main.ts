@@ -7,7 +7,7 @@ async function run(): Promise<void> {
     const inputPath: string = core.getInput('inputPath')
     const parser = new Parser(inputPath)
     await parser.parseObject()
-    exportReport(parser.toReport())
+    await exportReport(parser.toReport())
   } catch (error) {
     if (error instanceof Error) core.setFailed(error.message)
   }
