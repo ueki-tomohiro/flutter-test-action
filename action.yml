@@ -2,8 +2,12 @@ name: 'Tomohiro Ueki'
 description: 'flutter test export tool'
 author: 'Tomohiro Ueki'
 inputs:
-  inputPath:
-    required: true
+  coverage:
+    required: false
+    description: 'check coverage/lcov.info'
+    default: 'false'
+  machinePath:
+    required: false
     description: 'input flutter test --machine result path'
   title:
     required: false

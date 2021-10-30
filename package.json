@@ -30,6 +30,7 @@
     "@octokit/action": "^3.18.0",
     "@primer/octicons": "^16.1.1",
     "@primer/styled-octicons": "^16.1.1",
+    "lcov-parse": "^1.0.0",
     "xml-formatter": "^2.5.1"
   },
   "devDependencies": {
