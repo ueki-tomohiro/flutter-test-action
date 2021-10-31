@@ -1,7 +1,5 @@
 import {Annotation} from '../annotation'
 import {TestDone} from './testdone'
-// eslint-disable-next-line import/no-commonjs, @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
-const octicons = require('@primer/octicons')
 
 export class TestStart {
   readonly id: number
@@ -83,11 +81,7 @@ export class TestStart {
 
   toDetail(): string {
     if (this.result) {
-      return `| ${this.name} | ${
-        this.result.state
-          ? octicons['check-circle-fill'].toSVG()
-          : octicons['x-circle-fill'].toSVG()
-      } | ${this.result.time} |`
+      return `| ${this.name} | ${this.result.stateIcon} | ${this.result.time} |`
     }
     return ''
   }

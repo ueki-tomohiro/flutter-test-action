@@ -69,8 +69,10 @@ export class TestSuite {
     const success = tests.filter(test => test.result?.state === 'success')
     const error = tests.filter(test => test.result?.state === 'failure')
 
+    const status = error.length > 0 ? ':x:' : ':white_check_mark:'
+
     const line: string[] = []
-    line.push(`### ${this.path}`)
+    line.push(`#### ${status} ${this.path}`)
     line.push('')
     line.push(`| tests | success | failures |`)
     line.push(`| ---- | ---- | ---- |`)

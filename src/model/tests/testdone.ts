@@ -27,6 +27,15 @@ export class TestDone {
     this.error = error
     this.stackTrace = stackTrace
   }
+  get stateIcon(): string {
+    switch (this.state) {
+      case 'success':
+        return ':white_check_mark:'
+      case 'skipped':
+        return ':wavy_dash:'
+    }
+    return ':x:'
+  }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

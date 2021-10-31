@@ -1,6 +1,5 @@
 import {Conclusion, Reporter} from './model/reporter'
 import {Coverage, CoverageFromJSON} from './model'
-import {Annotation} from './model/annotation'
 // eslint-disable-next-line import/no-commonjs, @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
 const parse = require('lcov-parse')
 
@@ -21,40 +20,62 @@ export class CoverageParser {
           return
         }
         this.results = info.map(CoverageFromJSON)
+
         resolve()
       })
     })
   }
 
   toReport(): Reporter {
-    const results = this.results?.flatMap(r => r.functions)
+    const results = this.results
     if (!results) {
       return new Reporter({
         summary: '',
         detail: '',
+        comment: '',
         annotations: [],
         status: 'failure'
       })
     }
 
-    const summary: string[] = results.map(f => f.toSummary())
-    const detail: string[] = ['|Test|Status|Time|', '|----|----|----|']
-
-    const allDetails = results.flatMap(f => f.details)
-
-    const detailColumn: string[] = allDetails.map(d => d.toDetail())
-
-    const annotations = allDetails
-      .map(d => d.toAnnotation())
-      .filter(a => a !== undefined) as Annotation[]
+    const summary: string[] = [`### Coverage\n`].concat(
+      results.map(r => r.lines.toSummary(r.file))
+    )
+    const allLines = results.flatMap(r => r.lines)
+    const testCount = {found: 0, hit: 0}
+    for (const line of allLines) {
+      testCount.found += line.found
+      testCount.hit += line.hit
+    }
 
     const status: Conclusion =
-      allDetails.filter(d => d.hit < d.line).length > 0 ? 'failure' : 'success'
+      testCount.found > 0
+        ? testCount.hit / testCount.found > 0.8
+          ? 'success'
+          : 'failure'
+        : 'failure'
+
+    const icon = status === 'success' ? ':white_check_mark:' : `:x:`
+
+    const comment: string[] = [
+      `#### ${icon} Coverage`,
+      '|Coverage|Stat|',
+      '|----|----|'
+    ]
+    if (testCount.found > 0) {
+      comment.push(
+        `|${testCount.hit} / ${testCount.found}|${
+          Math.round((testCount.hit / testCount.found) * 1000) / 10
+        }|`
+      )
+    }
+    comment.push('')
 
     return new Reporter({
       summary: summary.join(''),
-      detail: detail.concat(detailColumn).join('\n'),
-      annotations,
+      detail: '',
+      comment: comment.join(`\n`),
+      annotations: [],
       status
     })
   }

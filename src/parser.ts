@@ -42,7 +42,7 @@ export class Parser {
     for (const line of lines) {
       this._parseLine(line)
     }
-
+    /*
     core.notice(`Test Count: ${this.tests.length}`)
     for (const model of this.tests) {
       if (model.hasError) {
@@ -51,6 +51,7 @@ export class Parser {
         core.notice(model.toReport())
       }
     }
+    */
   }
 
   _parseLine(line: string): void {
@@ -149,8 +150,15 @@ export class Parser {
   }
 
   toReport(): Reporter {
-    const summary: string[] = this.tests.map(test => test.toSummary())
-    const detail: string[] = ['|Test|Status|Time|', '|----|----|----|']
+    const summary: string[] = [`### Unit Test\n`].concat(
+      this.tests.map(test => test.toSummary())
+    )
+    const detail: string[] = [
+      `### Unit Test`,
+      '',
+      '|Test|Status|Time|',
+      '|----|----|----|'
+    ]
 
     const allTests = this.tests.flatMap(test =>
       test.groups.flatMap(g => g.tests)
@@ -158,18 +166,39 @@ export class Parser {
 
     const detailColumn: string[] = allTests.map(test => test.toDetail())
 
-    const annotations = allTests
-      .map(test => test.toAnnotation())
-      .filter(a => a !== undefined) as Annotation[]
+    const testCount = {tests: 0, success: 0, failure: 0}
+    for (const test of allTests) {
+      if (!test.result) continue
+      testCount.tests++
+      testCount.success += test.result?.state === 'success' ? 1 : 0
+      testCount.failure += test.result?.state === 'failure' ? 1 : 0
+    }
 
     const status: Conclusion =
       allTests.filter(t => t.result?.state === 'failure').length > 0
         ? 'failure'
         : 'success'
 
+    const icon = status === 'success' ? ':white_check_mark:' : ':x:'
+
+    const comment: string[] = [
+      `#### ${icon} Unit Test`,
+      '|Test|Success|Failure|',
+      '|----|----|----|'
+    ]
+    comment.push(
+      `|${testCount.tests}|${testCount.success}|${testCount.failure}|`
+    )
+    comment.push('')
+
+    const annotations = allTests
+      .map(test => test.toAnnotation())
+      .filter(a => a !== undefined) as Annotation[]
+
     return new Reporter({
       summary: summary.join(''),
       detail: detail.concat(detailColumn).join('\n'),
+      comment: comment.join(`\n`),
       annotations,
       status
     })
