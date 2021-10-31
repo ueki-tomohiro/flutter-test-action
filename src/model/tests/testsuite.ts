@@ -68,9 +68,10 @@ export class TestSuite {
     const tests = this.groups.flatMap(g => g.tests)
     const success = tests.filter(test => test.result?.state === 'success')
     const error = tests.filter(test => test.result?.state === 'failure')
+    const icon = error.length > 0 ? ':x:' : ':white_check_mark:'
 
     const line: string[] = []
-    line.push(`### ${this.path}`)
+    line.push(`#### ${icon} ${this.path}`)
     line.push('')
     line.push(`| tests | success | failures |`)
     line.push(`| ---- | ---- | ---- |`)

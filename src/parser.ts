@@ -42,15 +42,6 @@ export class Parser {
     for (const line of lines) {
       this._parseLine(line)
     }
-
-    core.notice(`Test Count: ${this.tests.length}`)
-    for (const model of this.tests) {
-      if (model.hasError) {
-        core.error(model.toReport())
-      } else {
-        core.notice(model.toReport())
-      }
-    }
   }
 
   _parseLine(line: string): void {
@@ -150,7 +141,12 @@ export class Parser {
 
   toReport(): Reporter {
     const summary: string[] = this.tests.map(test => test.toSummary())
-    const detail: string[] = ['|Test|Status|Time|', '|----|----|----|']
+    const detail: string[] = [
+      '### Coverage',
+      '',
+      '|Test|Status|Time|',
+      '|----|----|----|'
+    ]
 
     const allTests = this.tests.flatMap(test =>
       test.groups.flatMap(g => g.tests)
@@ -167,9 +163,24 @@ export class Parser {
         ? 'failure'
         : 'success'
 
+    const icon = status === 'success' ? ':white_check_mark:' : ':x:'
+
+    const comment: string[] = []
+    comment.push(`#### ${icon} Unit Test`)
+    comment.push('')
+    comment.push(`| Test | Success | Failure |`)
+    comment.push(`| ---- | ---- | ---- |`)
+    comment.push(
+      `| ${allTests.length}| ${
+        allTests.filter(t => t.result?.state === 'success').length
+      } | ${allTests.filter(t => t.result?.state === 'failure').length} |`
+    )
+    comment.push('')
+
     return new Reporter({
       summary: summary.join(''),
       detail: detail.concat(detailColumn).join('\n'),
+      comment: comment.join('\n'),
       annotations,
       status
     })
