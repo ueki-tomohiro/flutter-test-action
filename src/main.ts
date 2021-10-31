@@ -1,16 +1,26 @@
 import * as core from '@actions/core'
-import {wait} from './wait'
+import {CoverageParser} from './coverage'
+import {Parser} from './parser'
+import {exportReport} from './formatter'
 
 async function run(): Promise<void> {
   try {
-    const ms: string = core.getInput('milliseconds')
-    core.debug(`Waiting ${ms} milliseconds ...`) // debug is only output if you set the secret `ACTIONS_STEP_DEBUG` to true
-
-    core.debug(new Date().toTimeString())
-    await wait(parseInt(ms, 10))
-    core.debug(new Date().toTimeString())
-
-    core.setOutput('time', new Date().toTimeString())
+    let parser: Parser | undefined
+    let coverage: CoverageParser | undefined
+    if (core.getInput('machinePath')) {
+      const machinePath: string = core.getInput('machinePath')
+      parser = new Parser(machinePath)
+      await parser.parseObject()
+    }
+    if (core.getInput('coveragePath')) {
+      const coveragePath = core.getInput('coveragePath')
+      coverage = new CoverageParser(coveragePath)
+      await coverage.parseObject()
+    }
+    await exportReport({
+      report: parser?.toReport(),
+      coverage: coverage?.toReport()
+    })
   } catch (error) {
     if (error instanceof Error) core.setFailed(error.message)
   }

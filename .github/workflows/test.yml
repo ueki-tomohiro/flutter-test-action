@@ -21,4 +21,5 @@ jobs:
       - uses: actions/checkout@v2
       - uses: ./
         with:
-          milliseconds: 1000
+          machinePath: __tests__/data/result.json
+          coveragePath: __tests__/data/lcov.info

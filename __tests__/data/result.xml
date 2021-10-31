@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+    <testsuite id="0" package="/ci_test/test/date_util_test.dart" tests="2" failures="0" time="0">
+        <testcase classname="calcAge" time="2051">
+        </testcase>
+        <testcase classname="formatBirthDay" time="2099">
+        </testcase>
+    </testsuite>
+    <testsuite id="2" package="/ci_test/test/widget_test.dart" tests="1" failures="0" time="9">
+        <testcase classname="Counter increments smoke test" time="2183">
+        </testcase>
+    </testsuite>
+    <testsuite id="4" package="/ci_test/test/list_item_test.dart" tests="1" failures="0" time="10">
+        <testcase classname="ListItem test" time="2256">
+        </testcase>
+    </testsuite>
+    <testsuite id="6" package="/ci_test/test/version_test.dart" tests="4" failures="1" time="11">
+        <testcase classname="version 1.0.0" time="2212">
+        </testcase>
+        <testcase classname="version 1.14.178" time="2248">
+        </testcase>
+        <testcase classname="version 1.0.0-beta" time="2253">
+        </testcase>
+        <testcase classname="version 3.0.100" time="2258">
+            <failure type="failure" message="Expected: &#039;3.0.100A&#039;  Actual: &#039;3.0.100&#039;   Which: is different. Both strings start the same, but the actual value is missing the following trailing characters: A">
+                package:test_api                                    expect
+package:flutter_test/src/widget_tester.dart 461:16  expect
+test/version_test.dart 25:5                         main.&lt;fn&gt;
+            </failure>
+        </testcase>
+    </testsuite>
+</testsuites>
