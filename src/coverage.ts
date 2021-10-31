@@ -1,6 +1,5 @@
-import {Conclusion, Reporter} from './model/reporter'
 import {Coverage, CoverageFromJSON} from './model'
-import {Annotation} from './model/annotation'
+import {Reporter} from './model/reporter'
 // eslint-disable-next-line import/no-commonjs, @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
 const parse = require('lcov-parse')
 
@@ -27,35 +26,47 @@ export class CoverageParser {
   }
 
   toReport(): Reporter {
-    const results = this.results?.flatMap(r => r.functions)
+    const results = this.results?.flatMap(r => r.lines)
     if (!results) {
       return new Reporter({
         summary: '',
         detail: '',
+        comment: '',
         annotations: [],
         status: 'failure'
       })
     }
 
-    const summary: string[] = results.map(f => f.toSummary())
-    const detail: string[] = ['|Test|Status|Time|', '|----|----|----|']
+    const summary: string[] = ['### Coverage\n'].concat(
+      this.results?.map(f => f.toSummary()) ?? []
+    )
 
-    const allDetails = results.flatMap(f => f.details)
+    const summaryCount = {hit: 0, found: 0}
+    for (const line of results) {
+      summaryCount.hit += line.hit
+      summaryCount.found += line.found
+    }
 
-    const detailColumn: string[] = allDetails.map(d => d.toDetail())
+    const state =
+      summaryCount.found > 0
+        ? Math.round((summaryCount.hit / summaryCount.found) * 1000) / 10
+        : 0
+    const icon = state > 80 ? ':white_check_mark:' : ':x:'
 
-    const annotations = allDetails
-      .map(d => d.toAnnotation())
-      .filter(a => a !== undefined) as Annotation[]
-
-    const status: Conclusion =
-      allDetails.filter(d => d.hit < d.line).length > 0 ? 'failure' : 'success'
+    const comment: string[] = []
+    comment.push(`#### ${icon} Coverage`)
+    comment.push('')
+    comment.push(`| Hit | Found | State |`)
+    comment.push(`| ---- | ---- | ---- |`)
+    comment.push(`| ${summaryCount.hit}| ${summaryCount.found} | ${state} |`)
+    comment.push('')
 
     return new Reporter({
       summary: summary.join(''),
-      detail: detail.concat(detailColumn).join('\n'),
-      annotations,
-      status
+      detail: '',
+      comment: comment.join('\n'),
+      annotations: [],
+      status: state > 80 ? 'success' : 'failure'
     })
   }
 }
