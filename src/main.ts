@@ -1,21 +1,26 @@
 import * as core from '@actions/core'
-import {Coverage} from './coverage'
+import {CoverageParser} from './coverage'
 import {Parser} from './parser'
 import {exportReport} from './formatter'
 
 async function run(): Promise<void> {
   try {
+    let parser: Parser | undefined
+    let coverage: CoverageParser | undefined
     if (core.getInput('machinePath')) {
       const machinePath: string = core.getInput('machinePath')
-      const parser = new Parser(machinePath)
+      parser = new Parser(machinePath)
       await parser.parseObject()
-      await exportReport(parser.toReport())
     }
-    if (core.getInput('coveragePath') === 'true') {
-      const coveragePath = 'coverage/lcov.info'
-      const coverrage = new Coverage(coveragePath)
-      await coverrage.parseObject()
+    if (core.getInput('coveragePath')) {
+      const coveragePath = core.getInput('coveragePath')
+      coverage = new CoverageParser(coveragePath)
+      await coverage.parseObject()
     }
+    await exportReport({
+      report: parser?.toReport(),
+      coverage: coverage?.toReport()
+    })
   } catch (error) {
     if (error instanceof Error) core.setFailed(error.message)
   }

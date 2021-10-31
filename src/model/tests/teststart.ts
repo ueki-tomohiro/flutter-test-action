@@ -1,4 +1,4 @@
-import {Annotation} from './annotation'
+import {Annotation} from '../annotation'
 import {TestDone} from './testdone'
 // eslint-disable-next-line import/no-commonjs, @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
 const octicons = require('@primer/octicons')

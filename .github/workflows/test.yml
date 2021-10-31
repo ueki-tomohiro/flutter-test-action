@@ -21,4 +21,5 @@ jobs:
       - uses: actions/checkout@v2
       - uses: ./
         with:
-          inputPath: __tests__/data/result.json
+          machinePath: __tests__/data/result.json
+          coveragePath: __tests__/data/coverage.info
