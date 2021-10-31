@@ -12,7 +12,7 @@
 - name: flutter test
   run: flutter test --coverage
   if: success() || failure()
-- uses: ueki-tomohiro/flutter-result-tool@main
+- uses: ueki-tomohiro/flutter-test-action@v1
   with:
     machinPath: test.json
     coveragePath: coverage/lcov.info
