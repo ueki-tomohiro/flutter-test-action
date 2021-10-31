@@ -22,4 +22,4 @@ jobs:
       - uses: ./
         with:
           machinePath: __tests__/data/result.json
-          coveragePath: __tests__/data/coverage.info
+          coveragePath: __tests__/data/lcov.info

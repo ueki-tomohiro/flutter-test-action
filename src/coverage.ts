@@ -15,6 +15,7 @@ export class CoverageParser {
 
   async parseObject(): Promise<void> {
     const info = await parse(this.inputPath)
+    core.info(this.inputPath)
     core.info(info)
     this.result = CoverageFromJSON(info)
   }
