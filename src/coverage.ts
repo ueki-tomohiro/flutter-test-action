@@ -7,22 +7,30 @@ const parse = require('lcov-parse')
 
 export class CoverageParser {
   readonly inputPath: string
-  result: Coverage | undefined
+  results: Coverage[] | undefined
 
   constructor(inputPath: string) {
     this.inputPath = inputPath
   }
 
   async parseObject(): Promise<void> {
-    const info = await parse(this.inputPath)
-    core.info(this.inputPath)
-    core.info(info)
-    this.result = CoverageFromJSON(info)
+    return new Promise<void>((resolve, reject) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      parse(this.inputPath, (error: string, info: any) => {
+        if (error !== null) {
+          reject(error)
+          return
+        }
+        core.info(info)
+        this.results = info.map(CoverageFromJSON)
+        resolve()
+      })
+    })
   }
 
   toReport(): Reporter {
-    const result = this.result
-    if (!result) {
+    const results = this.results?.flatMap(r => r.functions)
+    if (!results) {
       return new Reporter({
         summary: '',
         detail: '',
@@ -31,10 +39,10 @@ export class CoverageParser {
       })
     }
 
-    const summary: string[] = result.functions.map(f => f.toSummary())
+    const summary: string[] = results.map(f => f.toSummary())
     const detail: string[] = ['|Test|Status|Time|', '|----|----|----|']
 
-    const allDetails = result.functions.flatMap(f => f.details)
+    const allDetails = results.flatMap(f => f.details)
 
     const detailColumn: string[] = allDetails.map(d => d.toDetail())
 

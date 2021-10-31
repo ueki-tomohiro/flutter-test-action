@@ -1,9 +1,9 @@
 import {CoverageParser} from '../src/coverage'
 
-describe('Paraser', () => {
+describe('Coverage', () => {
   test('parse json', async () => {
     const parser = new CoverageParser('__tests__/data/lcov.info')
     await parser.parseObject()
-    expect(parser.result.functions.length).toEqual(4)
+    expect(parser.results?.length).toBe(5)
   })
 })
