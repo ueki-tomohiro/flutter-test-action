@@ -1,10 +1,10 @@
 name: 'Tomohiro Ueki'
-description: 'flutter test export tool'
+description: 'create Flutter test report'
 author: 'Tomohiro Ueki'
 inputs:
   coveragePath:
     required: false
-    description: 'check coverage/lcov.info'
+    description: 'coverage/lcov.info'
   machinePath:
     required: false
     description: 'input flutter test --machine result path'

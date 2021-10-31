@@ -9,9 +9,12 @@
 ```yaml
 - name: flutter test
   run: flutter test --machine > test.json
+- name: flutter test
+  run: flutter test --coverage
+  if: success() || failure()
 - uses: ueki-tomohiro/flutter-result-tool@main
   with:
-    inputPath: test.json
-    outputPath: test.xml
+    machinPath: test.json
+    coveragePath: coverage/lcov.info
   if: success() || failure()
 ```
