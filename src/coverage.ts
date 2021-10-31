@@ -1,4 +1,3 @@
-import * as core from '@actions/core'
 import {Conclusion, Reporter} from './model/reporter'
 import {Coverage, CoverageFromJSON} from './model'
 import {Annotation} from './model/annotation'
@@ -21,7 +20,6 @@ export class CoverageParser {
           reject(error)
           return
         }
-        core.info(info)
         this.results = info.map(CoverageFromJSON)
         resolve()
       })
