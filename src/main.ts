@@ -22,7 +22,13 @@ async function run(): Promise<void> {
       coverage: coverage?.toReport()
     })
   } catch (error) {
-    if (error instanceof Error) core.setFailed(error.message)
+    if (error instanceof Error) {
+      core.setFailed(error.name)
+      if (error.stack) {
+        core.setFailed(error.stack)
+      }
+      core.setFailed(error.message)
+    }
   }
 }
 

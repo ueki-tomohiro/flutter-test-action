@@ -244,8 +244,13 @@ function run() {
             });
         }
         catch (error) {
-            if (error instanceof Error)
+            if (error instanceof Error) {
+                core.setFailed(error.name);
+                if (error.stack) {
+                    core.setFailed(error.stack);
+                }
                 core.setFailed(error.message);
+            }
         }
     });
 }
@@ -496,6 +501,7 @@ class TestDone {
 exports.TestDone = TestDone;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const TestDoneFromJSON = (json) => {
+    var _a;
     const id = json['testID'];
     const time = json['time'];
     const state = json['result'] === 'success' ? 'success' : 'failure';
@@ -503,7 +509,7 @@ const TestDoneFromJSON = (json) => {
     if (error) {
         error = error === null || error === void 0 ? void 0 : error.split('\n').join('');
     }
-    const stackTrace = json['stackTrace'];
+    const stackTrace = (_a = json['stackTrace']) !== null && _a !== void 0 ? _a : json['message'];
     return new TestDone({
         id,
         time,
@@ -888,6 +894,12 @@ class Parser {
             return;
         if (!start.result) {
             start.result = result;
+        }
+        else if (result.error) {
+            start.result.error = result.error;
+        }
+        else if (result.stackTrace) {
+            start.result.stackTrace = result.stackTrace;
         }
     }
     toUnit() {
