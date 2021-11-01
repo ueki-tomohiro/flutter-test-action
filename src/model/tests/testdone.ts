@@ -5,8 +5,8 @@ export class TestDone {
   readonly id: number
   readonly time: string
   readonly state: State
-  readonly error?: string
-  readonly stackTrace?: string
+  error?: string
+  stackTrace?: string
 
   constructor({
     id,
@@ -39,7 +39,7 @@ export const TestDoneFromJSON = (json: any): TestDone => {
   if (error) {
     error = error?.split('\n').join('')
   }
-  const stackTrace: string | undefined = json['stackTrace']
+  const stackTrace: string | undefined = json['stackTrace'] ?? json['message']
 
   return new TestDone({
     id,
