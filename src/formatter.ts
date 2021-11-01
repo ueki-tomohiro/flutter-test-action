@@ -83,11 +83,7 @@ export const exportReport: ExportReport = async ({report, coverage}) => {
     })
   } catch (error) {
     if (error instanceof Error) {
-      core.setFailed(error.name)
-      if (error.stack) {
-        core.setFailed(error.stack)
-      }
-      core.setFailed(error.message)
+      core.setFailed(`${error.name}:${error.message}\n\n${error.stack}`)
     }
   }
 }
