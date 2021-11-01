@@ -177,7 +177,13 @@ const exportReport = ({ report, coverage }) => __awaiter(void 0, void 0, void 0,
         });
     }
     catch (error) {
-        core.setFailed(error.message);
+        if (error instanceof Error) {
+            core.setFailed(error.name);
+            if (error.stack) {
+                core.setFailed(error.stack);
+            }
+            core.setFailed(error.message);
+        }
     }
 });
 exports.exportReport = exportReport;

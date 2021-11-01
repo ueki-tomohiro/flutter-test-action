@@ -78,6 +78,12 @@ export const exportReport: ExportReport = async ({report, coverage}) => {
       }
     })
   } catch (error) {
-    core.setFailed((error as Error).message)
+    if (error instanceof Error) {
+      core.setFailed(error.name)
+      if (error.stack) {
+        core.setFailed(error.stack)
+      }
+      core.setFailed(error.message)
+    }
   }
 }
