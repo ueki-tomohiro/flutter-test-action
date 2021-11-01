@@ -124,6 +124,9 @@ const action_1 = __nccwpck_require__(1231);
 const charactersLimit = 65535;
 const exportReport = ({ report, coverage }) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d;
+    if (!core.getInput('token')) {
+        return;
+    }
     try {
         const octokit = new action_1.Octokit();
         const owner = github.context.repo.owner;
