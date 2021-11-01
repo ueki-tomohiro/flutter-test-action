@@ -1,44 +1,23 @@
-{"protocolVersion":"0.1.1","runnerVersion":null,"pid":49970,"type":"start","time":0}
+{"protocolVersion":"0.1.1","runnerVersion":null,"pid":18951,"type":"start","time":0}
 {"suite":{"id":0,"platform":"vm","path":"/ci_test/test/date_util_test.dart"},"type":"suite","time":0}
 {"test":{"id":1,"name":"loading /ci_test/test/date_util_test.dart","suiteID":0,"groupIDs":[],"metadata":{"skip":false,"skipReason":null},"line":null,"column":null,"url":null},"type":"testStart","time":1}
-{"suite":{"id":2,"platform":"vm","path":"/ci_test/test/widget_test.dart"},"type":"suite","time":9}
+{"suite":{"id":2,"platform":"vm","path":"/ci_test/test/widget_test.dart"},"type":"suite","time":10}
 {"test":{"id":3,"name":"loading /ci_test/test/widget_test.dart","suiteID":2,"groupIDs":[],"metadata":{"skip":false,"skipReason":null},"line":null,"column":null,"url":null},"type":"testStart","time":10}
-{"suite":{"id":4,"platform":"vm","path":"/ci_test/test/list_item_test.dart"},"type":"suite","time":10}
-{"test":{"id":5,"name":"loading /ci_test/test/list_item_test.dart","suiteID":4,"groupIDs":[],"metadata":{"skip":false,"skipReason":null},"line":null,"column":null,"url":null},"type":"testStart","time":10}
-{"suite":{"id":6,"platform":"vm","path":"/ci_test/test/version_test.dart"},"type":"suite","time":11}
-{"test":{"id":7,"name":"loading /ci_test/test/version_test.dart","suiteID":6,"groupIDs":[],"metadata":{"skip":false,"skipReason":null},"line":null,"column":null,"url":null},"type":"testStart","time":11}
-{"count":4,"time":12,"type":"allSuites"}
+{"count":4,"time":11,"type":"allSuites"}
 
 [{"event":"test.startedProcess","params":{"observatoryUri":null}}]
 
 [{"event":"test.startedProcess","params":{"observatoryUri":null}}]
+{"testID":1,"result":"success","skipped":false,"hidden":true,"type":"testDone","time":2734}
+{"group":{"id":4,"suiteID":0,"parentID":null,"name":"","metadata":{"skip":false,"skipReason":null},"testCount":2,"line":null,"column":null,"url":null},"type":"group","time":2741}
+{"test":{"id":5,"name":"calcAge","suiteID":0,"groupIDs":[4],"metadata":{"skip":false,"skipReason":null},"line":6,"column":3,"url":"file:///ci_test/test/date_util_test.dart"},"type":"testStart","time":2742}
+{"testID":5,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":2806}
+{"test":{"id":6,"name":"formatBirthDay","suiteID":0,"groupIDs":[4],"metadata":{"skip":false,"skipReason":null},"line":12,"column":3,"url":"file:///ci_test/test/date_util_test.dart"},"type":"testStart","time":2806}
+{"testID":6,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":2815}
+{"suite":{"id":7,"platform":"vm","path":"/ci_test/test/list_item_test.dart"},"type":"suite","time":2853}
+{"test":{"id":8,"name":"loading /ci_test/test/list_item_test.dart","suiteID":7,"groupIDs":[],"metadata":{"skip":false,"skipReason":null},"line":null,"column":null,"url":null},"type":"testStart","time":2854}
+{"testID":3,"result":"success","skipped":false,"hidden":true,"type":"testDone","time":2894}
+{"group":{"id":9,"suiteID":2,"parentID":null,"name":"","metadata":{"skip":false,"skipReason":null},"testCount":1,"line":null,"column":null,"url":null},"type":"group","time":2895}
+{"test":{"id":10,"name":"Counter increments smoke test","suiteID":2,"groupIDs":[9],"metadata":{"skip":false,"skipReason":null},"line":159,"column":5,"url":"package:flutter_test/src/widget_tester.dart","root_line":14,"root_column":3,"root_url":"file:///ci_test/test/widget_test.dart"},"type":"testStart","time":2895}
 
 [{"event":"test.startedProcess","params":{"observatoryUri":null}}]
-
-[{"event":"test.startedProcess","params":{"observatoryUri":null}}]
-{"testID":1,"result":"success","skipped":false,"hidden":true,"type":"testDone","time":2044}
-{"group":{"id":8,"suiteID":0,"parentID":null,"name":"","metadata":{"skip":false,"skipReason":null},"testCount":2,"line":null,"column":null,"url":null},"type":"group","time":2050}
-{"test":{"id":9,"name":"calcAge","suiteID":0,"groupIDs":[8],"metadata":{"skip":false,"skipReason":null},"line":6,"column":3,"url":"file:///ci_test/test/date_util_test.dart"},"type":"testStart","time":2051}
-{"testID":9,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":2099}
-{"test":{"id":10,"name":"formatBirthDay","suiteID":0,"groupIDs":[8],"metadata":{"skip":false,"skipReason":null},"line":12,"column":3,"url":"file:///ci_test/test/date_util_test.dart"},"type":"testStart","time":2099}
-{"testID":10,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":2105}
-{"testID":3,"result":"success","skipped":false,"hidden":true,"type":"testDone","time":2182}
-{"group":{"id":11,"suiteID":2,"parentID":null,"name":"","metadata":{"skip":false,"skipReason":null},"testCount":1,"line":null,"column":null,"url":null},"type":"group","time":2183}
-{"test":{"id":12,"name":"Counter increments smoke test","suiteID":2,"groupIDs":[11],"metadata":{"skip":false,"skipReason":null},"line":159,"column":5,"url":"package:flutter_test/src/widget_tester.dart","root_line":14,"root_column":3,"root_url":"file:///ci_test/test/widget_test.dart"},"type":"testStart","time":2183}
-{"testID":7,"result":"success","skipped":false,"hidden":true,"type":"testDone","time":2212}
-{"group":{"id":13,"suiteID":6,"parentID":null,"name":"","metadata":{"skip":false,"skipReason":null},"testCount":4,"line":null,"column":null,"url":null},"type":"group","time":2212}
-{"test":{"id":14,"name":"version 1.0.0","suiteID":6,"groupIDs":[13],"metadata":{"skip":false,"skipReason":null},"line":6,"column":3,"url":"file:///ci_test/test/version_test.dart"},"type":"testStart","time":2212}
-{"testID":14,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":2248}
-{"test":{"id":15,"name":"version 1.14.178","suiteID":6,"groupIDs":[13],"metadata":{"skip":false,"skipReason":null},"line":12,"column":3,"url":"file:///ci_test/test/version_test.dart"},"type":"testStart","time":2248}
-{"testID":15,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":2253}
-{"test":{"id":16,"name":"version 1.0.0-beta","suiteID":6,"groupIDs":[13],"metadata":{"skip":false,"skipReason":null},"line":18,"column":3,"url":"file:///ci_test/test/version_test.dart"},"type":"testStart","time":2253}
-{"testID":5,"result":"success","skipped":false,"hidden":true,"type":"testDone","time":2255}
-{"group":{"id":17,"suiteID":4,"parentID":null,"name":"","metadata":{"skip":false,"skipReason":null},"testCount":1,"line":null,"column":null,"url":null},"type":"group","time":2256}
-{"test":{"id":18,"name":"ListItem test","suiteID":4,"groupIDs":[17],"metadata":{"skip":false,"skipReason":null},"line":159,"column":5,"url":"package:flutter_test/src/widget_tester.dart","root_line":20,"root_column":3,"root_url":"file:///ci_test/test/list_item_test.dart"},"type":"testStart","time":2256}
-{"testID":16,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":2257}
-{"test":{"id":19,"name":"version 3.0.100","suiteID":6,"groupIDs":[13],"metadata":{"skip":false,"skipReason":null},"line":24,"column":3,"url":"file:///ci_test/test/version_test.dart"},"type":"testStart","time":2258}
-{"testID":19,"error":"Expected: '3.0.100A'\n  Actual: '3.0.100'\n   Which: is different. Both strings start the same, but the actual value is missing the following trailing characters: A\n","stackTrace":"package:test_api                                    expect\npackage:flutter_test/src/widget_tester.dart 461:16  expect\ntest/version_test.dart 25:5                         main.<fn>\n","isFailure":true,"type":"error","time":2297}
-{"testID":19,"result":"failure","skipped":false,"hidden":false,"type":"testDone","time":2298}
-{"testID":18,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":3195}
-{"testID":12,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":3235}
-{"success":false,"type":"done","time":3247}

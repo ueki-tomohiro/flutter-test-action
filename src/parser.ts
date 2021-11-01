@@ -122,6 +122,10 @@ export class Parser {
     if (!start) return
     if (!start.result) {
       start.result = result
+    } else if (result.error) {
+      start.result.error = result.error
+    } else if (result.stackTrace) {
+      start.result.stackTrace = result.stackTrace
     }
   }
 
