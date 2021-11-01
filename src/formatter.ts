@@ -11,6 +11,10 @@ type ExportReport = (args: {
 const charactersLimit = 65535
 
 export const exportReport: ExportReport = async ({report, coverage}) => {
+  if (!core.getInput('token')) {
+    return
+  }
+
   try {
     const octokit = new Octokit()
 
