@@ -917,7 +917,7 @@ class Parser {
     toReport() {
         const summary = this.tests.map(test => test.toSummary());
         const detail = [
-            '### Coverage',
+            '### Unit Test',
             '',
             '|Test|Status|Time|',
             '|----|----|----|'

@@ -146,7 +146,7 @@ export class Parser {
   toReport(): Reporter {
     const summary: string[] = this.tests.map(test => test.toSummary())
     const detail: string[] = [
-      '### Coverage',
+      '### Unit Test',
       '',
       '|Test|Status|Time|',
       '|----|----|----|'
