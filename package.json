@@ -32,7 +32,7 @@
     "xml-formatter": "^2.5.1"
   },
   "devDependencies": {
-    "@types/jest": "^27.0.2",
+    "@types/jest": "^27.0.3",
     "@types/node": "^16.11.6",
     "@typescript-eslint/parser": "^5.4.0",
     "@vercel/ncc": "^0.31.1",
