@@ -27,7 +27,7 @@
   "dependencies": {
     "@actions/core": "^1.9.1",
     "@actions/github": "^5.0.0",
-    "@octokit/action": "^3.18.0",
+    "@octokit/action": "^4.0.8",
     "lcov-parse": "^1.0.0",
     "xml-formatter": "^2.6.0"
   },
