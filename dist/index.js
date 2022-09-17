@@ -121,11 +121,19 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.exportReport = void 0;
+exports.exportReport = exports.escapeEmoji = void 0;
 const core = __importStar(__nccwpck_require__(2186));
 const github = __importStar(__nccwpck_require__(5438));
 const action_1 = __nccwpck_require__(1231);
 const charactersLimit = 65535;
+/**
+ * Escape emoji sequences.
+ */
+function escapeEmoji(input) {
+    const regex = /[\u{1f300}-\u{1f5ff}\u{1f900}-\u{1f9ff}\u{1f600}-\u{1f64f}\u{1f680}-\u{1f6ff}\u{2600}-\u{26ff}\u{2700}-\u{27bf}\u{1f1e6}-\u{1f1ff}\u{1f191}-\u{1f251}\u{1f004}\u{1f0cf}\u{1f170}-\u{1f171}\u{1f17e}-\u{1f17f}\u{1f18e}\u{3030}\u{2b50}\u{2b55}\u{2934}-\u{2935}\u{2b05}-\u{2b07}\u{2b1b}-\u{2b1c}\u{3297}\u{3299}\u{303d}\u{00a9}\u{00ae}\u{2122}\u{23f3}\u{24c2}\u{23e9}-\u{23ef}\u{25b6}\u{23f8}-\u{23fa}]/gu;
+    return input.replace(regex, ``); // replace emoji with empty string (\\u${(match.codePointAt(0) || "").toString(16)})
+}
+exports.escapeEmoji = escapeEmoji;
 const exportReport = ({ report, coverage }) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d;
     if (!core.getInput('token')) {
@@ -582,6 +590,7 @@ exports.TestGroupFromJSON = TestGroupFromJSON;
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.TestStartFromJSON = exports.TestStart = void 0;
+const formatter_1 = __nccwpck_require__(7556);
 const annotation_1 = __nccwpck_require__(8376);
 class TestStart {
     constructor({ id, suiteId, groupIds, name, url, skip, line, column, time }) {
@@ -616,9 +625,11 @@ class TestStart {
             start_line: this.line,
             end_line: this.line,
             annotation_level: 'failure',
-            message: (_a = this.result.error) !== null && _a !== void 0 ? _a : '',
-            title: this.name,
+            message: (0, formatter_1.escapeEmoji)((_a = this.result.error) !== null && _a !== void 0 ? _a : ''),
+            title: (0, formatter_1.escapeEmoji)(this.name),
             raw_details: this.result.stackTrace
+                ? (0, formatter_1.escapeEmoji)(this.result.stackTrace)
+                : undefined
         });
     }
     toUnit() {
