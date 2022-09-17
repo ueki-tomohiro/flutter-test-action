@@ -177,16 +177,16 @@ const exportReport = ({ report, coverage }) => __awaiter(void 0, void 0, void 0,
             });
         }
         yield octokit.checks.create({
-            owner: escapeEmoji(owner),
-            repo: escapeEmoji(repo),
-            name: escapeEmoji(title),
+            owner,
+            repo,
+            name: title,
             head_sha: sha,
             status: 'completed',
             conclusion: (report === null || report === void 0 ? void 0 : report.status) === 'success' ? 'success' : 'failure',
             output: {
-                title: escapeEmoji(title),
-                summary: escapeEmoji(summary),
-                text: escapeEmoji(reportDetail),
+                title,
+                summary,
+                text: reportDetail,
                 annotations: annotations.slice(0, 50)
             }
         });
@@ -590,7 +590,6 @@ exports.TestGroupFromJSON = TestGroupFromJSON;
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.TestStartFromJSON = exports.TestStart = void 0;
-const formatter_1 = __nccwpck_require__(7556);
 const annotation_1 = __nccwpck_require__(8376);
 class TestStart {
     constructor({ id, suiteId, groupIds, name, url, skip, line, column, time }) {
@@ -625,11 +624,9 @@ class TestStart {
             start_line: this.line,
             end_line: this.line,
             annotation_level: 'failure',
-            message: (0, formatter_1.escapeEmoji)((_a = this.result.error) !== null && _a !== void 0 ? _a : ''),
-            title: (0, formatter_1.escapeEmoji)(this.name),
+            message: (_a = this.result.error) !== null && _a !== void 0 ? _a : '',
+            title: this.name,
             raw_details: this.result.stackTrace
-                ? (0, formatter_1.escapeEmoji)(this.result.stackTrace)
-                : undefined
         });
     }
     toUnit() {

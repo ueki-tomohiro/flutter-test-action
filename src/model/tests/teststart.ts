@@ -1,4 +1,3 @@
-import {escapeEmoji} from '../../formatter'
 import {Annotation} from '../annotation'
 import {TestDone} from './testdone'
 
@@ -66,11 +65,9 @@ export class TestStart {
       start_line: this.line,
       end_line: this.line,
       annotation_level: 'failure',
-      message: escapeEmoji(this.result.error ?? ''),
-      title: escapeEmoji(this.name),
+      message: this.result.error ?? '',
+      title: this.name,
       raw_details: this.result.stackTrace
-        ? escapeEmoji(this.result.stackTrace)
-        : undefined
     })
   }
 
