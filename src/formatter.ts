@@ -86,8 +86,8 @@ export const exportReport: ExportReport = async ({report, coverage}) => {
       output: {
         title,
         summary,
-        text: reportDetail,
-        annotations: annotations.slice(0, 50)
+        text: reportDetail
+        //        annotations: annotations.slice(0, 50)
       }
     })
   } catch (error) {

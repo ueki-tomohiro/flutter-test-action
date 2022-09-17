@@ -186,8 +186,8 @@ const exportReport = ({ report, coverage }) => __awaiter(void 0, void 0, void 0,
             output: {
                 title,
                 summary,
-                text: reportDetail,
-                annotations: annotations.slice(0, 50)
+                text: reportDetail
+                //        annotations: annotations.slice(0, 50)
             }
         });
     }
@@ -285,10 +285,10 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.Annotation = void 0;
 const annotationLevel = (/* unused pure expression or super */ null && (['notice', 'warning', 'failure']));
 /*
- * @see https://docs.github.com/en/rest/reference/checks#annotations-object
+ * @see https://docs.github.com/en/rest/checks#annotations-object
  */
 class Annotation {
-    constructor({ path, start_line, end_line, start_column, end_column, annotation_level, message, title, raw_details }) {
+    constructor({ path, start_line, end_line, start_column, end_column, annotation_level, message, title, raw_details, blob_href }) {
         this.path = path;
         this.start_line = start_line;
         this.end_line = end_line;
@@ -298,6 +298,8 @@ class Annotation {
         this.message = message;
         this.title = title;
         this.raw_details = raw_details;
+        this.blob_href =
+            blob_href !== null && blob_href !== void 0 ? blob_href : 'https://api.github.com/repos/github/rest-api-description/git/blobs/abc';
     }
 }
 exports.Annotation = Annotation;

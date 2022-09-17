@@ -14,25 +14,25 @@ describe('Paraser', () => {
     const parser = new Parser('__tests__/data/result.json')
     await parser.parseObject()
     expect(parser.tests[0].id).toBe(0)
-    expect(parser.tests[0].groups.length).toBe(1)
-    expect(parser.tests[0].path).toBe('/ci_test/test/date_util_test.dart')
+    expect(parser.tests[0].groups.length).toBe(2)
+    expect(parser.tests[0].path).toBe('forecast_controller_test.dart')
   })
 
   test('check group', async () => {
     const parser = new Parser('__tests__/data/result.json')
     await parser.parseObject()
-    expect(parser.tests[0].groups[0].id).toBe(4)
-    expect(parser.tests[0].groups[0].tests.length).toBe(2)
+    expect(parser.tests[0].groups[0].id).toBe(6)
+    expect(parser.tests[0].groups[0].tests.length).toBe(1)
   })
 
   test('check test', async () => {
     const parser = new Parser('__tests__/data/result.json')
     await parser.parseObject()
     expect(parser.tests[0].groups[0].tests[0].url).toBe(
-      'file:///ci_test/test/date_util_test.dart'
+      'file://forecast_controller_test.dart'
     )
     expect(parser.tests[0].groups[0].tests[0].suiteId).toBe(0)
-    expect(parser.tests[0].groups[0].tests[0].groupIds[0]).toBe(4)
+    expect(parser.tests[0].groups[0].tests[0].groupIds[0]).toBe(6)
   })
 
   test('check test done', async () => {
@@ -54,6 +54,6 @@ describe('Paraser', () => {
     const parser = new Parser('__tests__/data/result.json')
     await parser.parseObject()
     const report = parser.toReport()
-    expect(report.annotations.length).toBe(0)
+    expect(report.annotations.length).toBe(1)
   })
 })

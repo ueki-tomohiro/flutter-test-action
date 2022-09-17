@@ -3,7 +3,7 @@ const annotationLevel = ['notice', 'warning', 'failure'] as const
 type AnnotationLevel = typeof annotationLevel[number]
 
 /*
- * @see https://docs.github.com/en/rest/reference/checks#annotations-object
+ * @see https://docs.github.com/en/rest/checks#annotations-object
  */
 export class Annotation {
   // Required. The path of the file to add an annotation to. For example, assets/css/main.css.
@@ -22,7 +22,7 @@ export class Annotation {
   readonly end_column?: number
 
   // Required. The level of the annotation. Can be one of notice, warning, or failure.
-  readonly annotation_level: AnnotationLevel
+  readonly annotation_level?: AnnotationLevel
 
   // Required. A short description of the feedback for these lines of code. The maximum size is 64 KB.
   readonly message: string
@@ -33,6 +33,8 @@ export class Annotation {
   // Details about this annotation. The maximum size is 64 KB.
   readonly raw_details?: string
 
+  readonly blob_href: string
+
   constructor({
     path,
     start_line,
@@ -42,17 +44,19 @@ export class Annotation {
     annotation_level,
     message,
     title,
-    raw_details
+    raw_details,
+    blob_href
   }: {
     path: string
     start_line: number
     end_line: number
     start_column?: number
     end_column?: number
-    annotation_level: AnnotationLevel
+    annotation_level?: AnnotationLevel
     message: string
     title?: string
     raw_details?: string
+    blob_href?: string
   }) {
     this.path = path
     this.start_line = start_line
@@ -63,5 +67,8 @@ export class Annotation {
     this.message = message
     this.title = title
     this.raw_details = raw_details
+    this.blob_href =
+      blob_href ??
+      'https://api.github.com/repos/github/rest-api-description/git/blobs/abc'
   }
 }
