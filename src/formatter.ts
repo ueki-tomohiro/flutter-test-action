@@ -77,16 +77,16 @@ export const exportReport: ExportReport = async ({report, coverage}) => {
     }
 
     await octokit.checks.create({
-      owner,
-      repo,
-      name: title,
+      owner: escapeEmoji(owner),
+      repo: escapeEmoji(repo),
+      name: escapeEmoji(title),
       head_sha: sha,
       status: 'completed',
       conclusion: report?.status === 'success' ? 'success' : 'failure',
       output: {
-        title,
-        summary,
-        text: reportDetail,
+        title: escapeEmoji(title),
+        summary: escapeEmoji(summary),
+        text: escapeEmoji(reportDetail),
         annotations: annotations.slice(0, 50)
       }
     })
