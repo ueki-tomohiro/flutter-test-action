@@ -186,8 +186,8 @@ const exportReport = ({ report, coverage }) => __awaiter(void 0, void 0, void 0,
             output: {
                 title,
                 summary,
-                text: reportDetail
-                //        annotations: annotations.slice(0, 50)
+                text: reportDetail,
+                annotations: annotations.slice(0, 50)
             }
         });
     }
@@ -903,7 +903,7 @@ class Parser {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     _parseTestMessage(line) {
         if (line['type'] === 'print') {
-            this._checkResult((0, model_1.TestDoneFromJSON)(line));
+            // skip
         }
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

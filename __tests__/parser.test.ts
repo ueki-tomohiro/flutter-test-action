@@ -54,6 +54,6 @@ describe('Paraser', () => {
     const parser = new Parser('__tests__/data/result.json')
     await parser.parseObject()
     const report = parser.toReport()
-    expect(report.annotations.length).toBe(1)
+    expect(report.annotations.length).toBe(0)
   })
 })

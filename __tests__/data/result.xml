@@ -8,9 +8,8 @@
         <testcase classname="forecast page testing search test" time="2031">
         </testcase>
     </testsuite>
-    <testsuite id="4" package="widget_test.dart" tests="1" failures="1" time="3">
+    <testsuite id="4" package="widget_test.dart" tests="1" failures="0" time="3">
         <testcase classname="Counter increments smoke test" time="2132">
-            <failure type="failure" message=""></failure>
         </testcase>
     </testsuite>
 </testsuites>
