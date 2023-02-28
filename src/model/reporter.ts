@@ -11,7 +11,7 @@ const conclusion = [
   'timed_out'
 ] as const
 
-export type Conclusion = typeof conclusion[number]
+export type Conclusion = (typeof conclusion)[number]
 
 export class Reporter {
   readonly summary: string

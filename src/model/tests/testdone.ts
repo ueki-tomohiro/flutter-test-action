@@ -1,5 +1,5 @@
 const stateValues = ['success', 'skipped', 'failure'] as const
-type State = typeof stateValues[number]
+type State = (typeof stateValues)[number]
 
 export class TestDone {
   readonly id: number

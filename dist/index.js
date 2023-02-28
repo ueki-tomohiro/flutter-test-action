@@ -812,7 +812,7 @@ const core = __importStar(__nccwpck_require__(2186));
 const os = __importStar(__nccwpck_require__(2037));
 const reporter_1 = __nccwpck_require__(9609);
 const model_1 = __nccwpck_require__(1359);
-const xml_formatter_1 = __importDefault(__nccwpck_require__(1886));
+const xml_formatter_1 = __importDefault(__nccwpck_require__(5784));
 const fs_1 = __nccwpck_require__(7147);
 const { readFile, stat } = fs_1.promises;
 class Parser {
@@ -1115,7 +1115,6 @@ const file_command_1 = __nccwpck_require__(717);
 const utils_1 = __nccwpck_require__(5278);
 const os = __importStar(__nccwpck_require__(2037));
 const path = __importStar(__nccwpck_require__(1017));
-const uuid_1 = __nccwpck_require__(5840);
 const oidc_utils_1 = __nccwpck_require__(8041);
 /**
  * The code to exit an action
@@ -1145,20 +1144,9 @@ function exportVariable(name, val) {
     process.env[name] = convertedVal;
     const filePath = process.env['GITHUB_ENV'] || '';
     if (filePath) {
-        const delimiter = `ghadelimiter_${uuid_1.v4()}`;
-        // These should realistically never happen, but just in case someone finds a way to exploit uuid generation let's not allow keys or values that contain the delimiter.
-        if (name.includes(delimiter)) {
-            throw new Error(`Unexpected input: name should not contain the delimiter "${delimiter}"`);
-        }
-        if (convertedVal.includes(delimiter)) {
-            throw new Error(`Unexpected input: value should not contain the delimiter "${delimiter}"`);
-        }
-        const commandValue = `${name}<<${delimiter}${os.EOL}${convertedVal}${os.EOL}${delimiter}`;
-        file_command_1.issueCommand('ENV', commandValue);
+        return file_command_1.issueFileCommand('ENV', file_command_1.prepareKeyValueMessage(name, val));
     }
-    else {
-        command_1.issueCommand('set-env', { name }, convertedVal);
-    }
+    command_1.issueCommand('set-env', { name }, convertedVal);
 }
 exports.exportVariable = exportVariable;
 /**
@@ -1176,7 +1164,7 @@ exports.setSecret = setSecret;
 function addPath(inputPath) {
     const filePath = process.env['GITHUB_PATH'] || '';
     if (filePath) {
-        file_command_1.issueCommand('PATH', inputPath);
+        file_command_1.issueFileCommand('PATH', inputPath);
     }
     else {
         command_1.issueCommand('add-path', {}, inputPath);
@@ -1216,7 +1204,10 @@ function getMultilineInput(name, options) {
     const inputs = getInput(name, options)
         .split('\n')
         .filter(x => x !== '');
-    return inputs;
+    if (options && options.trimWhitespace === false) {
+        return inputs;
+    }
+    return inputs.map(input => input.trim());
 }
 exports.getMultilineInput = getMultilineInput;
 /**
@@ -1249,8 +1240,12 @@ exports.getBooleanInput = getBooleanInput;
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function setOutput(name, value) {
+    const filePath = process.env['GITHUB_OUTPUT'] || '';
+    if (filePath) {
+        return file_command_1.issueFileCommand('OUTPUT', file_command_1.prepareKeyValueMessage(name, value));
+    }
     process.stdout.write(os.EOL);
-    command_1.issueCommand('set-output', { name }, value);
+    command_1.issueCommand('set-output', { name }, utils_1.toCommandValue(value));
 }
 exports.setOutput = setOutput;
 /**
@@ -1379,7 +1374,11 @@ exports.group = group;
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function saveState(name, value) {
-    command_1.issueCommand('save-state', { name }, value);
+    const filePath = process.env['GITHUB_STATE'] || '';
+    if (filePath) {
+        return file_command_1.issueFileCommand('STATE', file_command_1.prepareKeyValueMessage(name, value));
+    }
+    command_1.issueCommand('save-state', { name }, utils_1.toCommandValue(value));
 }
 exports.saveState = saveState;
 /**
@@ -1445,13 +1444,14 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.issueCommand = void 0;
+exports.prepareKeyValueMessage = exports.issueFileCommand = void 0;
 // We use any as a valid input type
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const fs = __importStar(__nccwpck_require__(7147));
 const os = __importStar(__nccwpck_require__(2037));
+const uuid_1 = __nccwpck_require__(5840);
 const utils_1 = __nccwpck_require__(5278);
-function issueCommand(command, message) {
+function issueFileCommand(command, message) {
     const filePath = process.env[`GITHUB_${command}`];
     if (!filePath) {
         throw new Error(`Unable to find environment variable for file command ${command}`);
@@ -1463,7 +1463,22 @@ function issueCommand(command, message) {
         encoding: 'utf8'
     });
 }
-exports.issueCommand = issueCommand;
+exports.issueFileCommand = issueFileCommand;
+function prepareKeyValueMessage(key, value) {
+    const delimiter = `ghadelimiter_${uuid_1.v4()}`;
+    const convertedValue = utils_1.toCommandValue(value);
+    // These should realistically never happen, but just in case someone finds a
+    // way to exploit uuid generation let's not allow keys or values that contain
+    // the delimiter.
+    if (key.includes(delimiter)) {
+        throw new Error(`Unexpected input: name should not contain the delimiter "${delimiter}"`);
+    }
+    if (convertedValue.includes(delimiter)) {
+        throw new Error(`Unexpected input: value should not contain the delimiter "${delimiter}"`);
+    }
+    return `${key}<<${delimiter}${os.EOL}${convertedValue}${os.EOL}${delimiter}`;
+}
+exports.prepareKeyValueMessage = prepareKeyValueMessage;
 //# sourceMappingURL=file-command.js.map
 
 /***/ }),
@@ -2050,8 +2065,9 @@ exports.context = new Context.Context();
  * @param     token    the repo PAT or GITHUB_TOKEN
  * @param     options  other options to set
  */
-function getOctokit(token, options) {
-    return new utils_1.GitHub(utils_1.getOctokitOptions(token, options));
+function getOctokit(token, options, ...additionalPlugins) {
+    const GitHubWithPlugins = utils_1.GitHub.plugin(...additionalPlugins);
+    return new GitHubWithPlugins(utils_1.getOctokitOptions(token, options));
 }
 exports.getOctokit = getOctokit;
 //# sourceMappingURL=github.js.map
@@ -2133,7 +2149,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getOctokitOptions = exports.GitHub = exports.context = void 0;
+exports.getOctokitOptions = exports.GitHub = exports.defaults = exports.context = void 0;
 const Context = __importStar(__nccwpck_require__(4087));
 const Utils = __importStar(__nccwpck_require__(7914));
 // octokit + plugins
@@ -2142,13 +2158,13 @@ const plugin_rest_endpoint_methods_1 = __nccwpck_require__(3044);
 const plugin_paginate_rest_1 = __nccwpck_require__(4193);
 exports.context = new Context.Context();
 const baseUrl = Utils.getApiBaseUrl();
-const defaults = {
+exports.defaults = {
     baseUrl,
     request: {
         agent: Utils.getProxyAgent(baseUrl)
     }
 };
-exports.GitHub = core_1.Octokit.plugin(plugin_rest_endpoint_methods_1.restEndpointMethods, plugin_paginate_rest_1.paginateRest).defaults(defaults);
+exports.GitHub = core_1.Octokit.plugin(plugin_rest_endpoint_methods_1.restEndpointMethods, plugin_paginate_rest_1.paginateRest).defaults(exports.defaults);
 /**
  * Convience function to correctly format Octokit Options to pass into the constructor.
  *
@@ -2950,7 +2966,7 @@ var authAction = __nccwpck_require__(20);
 var pluginPaginateRest = __nccwpck_require__(9331);
 var pluginRestEndpointMethods = __nccwpck_require__(8528);
 
-const VERSION = "4.0.8";
+const VERSION = "4.0.10";
 
 const HttpsProxyAgent = __nccwpck_require__(7219);
 
@@ -3673,7 +3689,7 @@ exports.withCustomRequest = withCustomRequest;
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 
-const VERSION = "4.3.1";
+const VERSION = "5.0.1";
 
 /**
  * Some “list” response that can be paginated have a different response structure
@@ -3694,15 +3710,15 @@ const VERSION = "4.3.1";
 function normalizePaginatedListResponse(response) {
   // endpoints can respond with 204 if repository is empty
   if (!response.data) {
-    return { ...response,
+    return {
+      ...response,
       data: []
     };
   }
-
   const responseNeedsNormalization = "total_count" in response.data && !("url" in response.data);
-  if (!responseNeedsNormalization) return response; // keep the additional properties intact as there is currently no other way
+  if (!responseNeedsNormalization) return response;
+  // keep the additional properties intact as there is currently no other way
   // to retrieve the same information.
-
   const incompleteResults = response.data.incomplete_results;
   const repositorySelection = response.data.repository_selection;
   const totalCount = response.data.total_count;
@@ -3712,15 +3728,12 @@ function normalizePaginatedListResponse(response) {
   const namespaceKey = Object.keys(response.data)[0];
   const data = response.data[namespaceKey];
   response.data = data;
-
   if (typeof incompleteResults !== "undefined") {
     response.data.incomplete_results = incompleteResults;
   }
-
   if (typeof repositorySelection !== "undefined") {
     response.data.repository_selection = repositorySelection;
   }
-
   response.data.total_count = totalCount;
   return response;
 }
@@ -3737,17 +3750,16 @@ function iterator(octokit, route, parameters) {
         if (!url) return {
           done: true
         };
-
         try {
           const response = await requestMethod({
             method,
             url,
             headers
           });
-          const normalizedResponse = normalizePaginatedListResponse(response); // `response.headers.link` format:
+          const normalizedResponse = normalizePaginatedListResponse(response);
+          // `response.headers.link` format:
           // '<https://api.github.com/users/aseemk/followers?page=2>; rel="next", <https://api.github.com/users/aseemk/followers?page=2>; rel="last"'
           // sets `url` to undefined if "next" URL is not present or `link` header is not set
-
           url = ((normalizedResponse.headers.link || "").match(/<([^>]+)>;\s*rel="next"/) || [])[1];
           return {
             value: normalizedResponse
@@ -3764,7 +3776,6 @@ function iterator(octokit, route, parameters) {
           };
         }
       }
-
     })
   };
 }
@@ -3774,28 +3785,21 @@ function paginate(octokit, route, parameters, mapFn) {
     mapFn = parameters;
     parameters = undefined;
   }
-
   return gather(octokit, [], iterator(octokit, route, parameters)[Symbol.asyncIterator](), mapFn);
 }
-
 function gather(octokit, results, iterator, mapFn) {
   return iterator.next().then(result => {
     if (result.done) {
       return results;
     }
-
     let earlyExit = false;
-
     function done() {
       earlyExit = true;
     }
-
     results = results.concat(mapFn ? mapFn(result.value, done) : result.value.data);
-
     if (earlyExit) {
       return results;
     }
-
     return gather(octokit, results, iterator, mapFn);
   });
 }
@@ -3804,7 +3808,7 @@ const composePaginateRest = Object.assign(paginate, {
   iterator
 });
 
-const paginatingEndpoints = ["GET /app/hook/deliveries", "GET /app/installations", "GET /enterprises/{enterprise}/actions/permissions/organizations", "GET /enterprises/{enterprise}/actions/runner-groups", "GET /enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/organizations", "GET /enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/runners", "GET /enterprises/{enterprise}/actions/runners", "GET /enterprises/{enterprise}/audit-log", "GET /enterprises/{enterprise}/code-scanning/alerts", "GET /enterprises/{enterprise}/secret-scanning/alerts", "GET /enterprises/{enterprise}/settings/billing/advanced-security", "GET /events", "GET /gists", "GET /gists/public", "GET /gists/starred", "GET /gists/{gist_id}/comments", "GET /gists/{gist_id}/commits", "GET /gists/{gist_id}/forks", "GET /installation/repositories", "GET /issues", "GET /licenses", "GET /marketplace_listing/plans", "GET /marketplace_listing/plans/{plan_id}/accounts", "GET /marketplace_listing/stubbed/plans", "GET /marketplace_listing/stubbed/plans/{plan_id}/accounts", "GET /networks/{owner}/{repo}/events", "GET /notifications", "GET /organizations", "GET /orgs/{org}/actions/cache/usage-by-repository", "GET /orgs/{org}/actions/permissions/repositories", "GET /orgs/{org}/actions/runner-groups", "GET /orgs/{org}/actions/runner-groups/{runner_group_id}/repositories", "GET /orgs/{org}/actions/runner-groups/{runner_group_id}/runners", "GET /orgs/{org}/actions/runners", "GET /orgs/{org}/actions/secrets", "GET /orgs/{org}/actions/secrets/{secret_name}/repositories", "GET /orgs/{org}/audit-log", "GET /orgs/{org}/blocks", "GET /orgs/{org}/code-scanning/alerts", "GET /orgs/{org}/codespaces", "GET /orgs/{org}/credential-authorizations", "GET /orgs/{org}/dependabot/secrets", "GET /orgs/{org}/dependabot/secrets/{secret_name}/repositories", "GET /orgs/{org}/events", "GET /orgs/{org}/external-groups", "GET /orgs/{org}/failed_invitations", "GET /orgs/{org}/hooks", "GET /orgs/{org}/hooks/{hook_id}/deliveries", "GET /orgs/{org}/installations", "GET /orgs/{org}/invitations", "GET /orgs/{org}/invitations/{invitation_id}/teams", "GET /orgs/{org}/issues", "GET /orgs/{org}/members", "GET /orgs/{org}/migrations", "GET /orgs/{org}/migrations/{migration_id}/repositories", "GET /orgs/{org}/outside_collaborators", "GET /orgs/{org}/packages", "GET /orgs/{org}/packages/{package_type}/{package_name}/versions", "GET /orgs/{org}/projects", "GET /orgs/{org}/public_members", "GET /orgs/{org}/repos", "GET /orgs/{org}/secret-scanning/alerts", "GET /orgs/{org}/settings/billing/advanced-security", "GET /orgs/{org}/team-sync/groups", "GET /orgs/{org}/teams", "GET /orgs/{org}/teams/{team_slug}/discussions", "GET /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/comments", "GET /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/comments/{comment_number}/reactions", "GET /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/reactions", "GET /orgs/{org}/teams/{team_slug}/invitations", "GET /orgs/{org}/teams/{team_slug}/members", "GET /orgs/{org}/teams/{team_slug}/projects", "GET /orgs/{org}/teams/{team_slug}/repos", "GET /orgs/{org}/teams/{team_slug}/teams", "GET /projects/columns/{column_id}/cards", "GET /projects/{project_id}/collaborators", "GET /projects/{project_id}/columns", "GET /repos/{owner}/{repo}/actions/artifacts", "GET /repos/{owner}/{repo}/actions/caches", "GET /repos/{owner}/{repo}/actions/runners", "GET /repos/{owner}/{repo}/actions/runs", "GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts", "GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs", "GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs", "GET /repos/{owner}/{repo}/actions/secrets", "GET /repos/{owner}/{repo}/actions/workflows", "GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs", "GET /repos/{owner}/{repo}/assignees", "GET /repos/{owner}/{repo}/branches", "GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations", "GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs", "GET /repos/{owner}/{repo}/code-scanning/alerts", "GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/instances", "GET /repos/{owner}/{repo}/code-scanning/analyses", "GET /repos/{owner}/{repo}/codespaces", "GET /repos/{owner}/{repo}/codespaces/devcontainers", "GET /repos/{owner}/{repo}/codespaces/secrets", "GET /repos/{owner}/{repo}/collaborators", "GET /repos/{owner}/{repo}/comments", "GET /repos/{owner}/{repo}/comments/{comment_id}/reactions", "GET /repos/{owner}/{repo}/commits", "GET /repos/{owner}/{repo}/commits/{commit_sha}/comments", "GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls", "GET /repos/{owner}/{repo}/commits/{ref}/check-runs", "GET /repos/{owner}/{repo}/commits/{ref}/check-suites", "GET /repos/{owner}/{repo}/commits/{ref}/status", "GET /repos/{owner}/{repo}/commits/{ref}/statuses", "GET /repos/{owner}/{repo}/contributors", "GET /repos/{owner}/{repo}/dependabot/secrets", "GET /repos/{owner}/{repo}/deployments", "GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses", "GET /repos/{owner}/{repo}/environments", "GET /repos/{owner}/{repo}/environments/{environment_name}/deployment-branch-policies", "GET /repos/{owner}/{repo}/events", "GET /repos/{owner}/{repo}/forks", "GET /repos/{owner}/{repo}/hooks", "GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries", "GET /repos/{owner}/{repo}/invitations", "GET /repos/{owner}/{repo}/issues", "GET /repos/{owner}/{repo}/issues/comments", "GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions", "GET /repos/{owner}/{repo}/issues/events", "GET /repos/{owner}/{repo}/issues/{issue_number}/comments", "GET /repos/{owner}/{repo}/issues/{issue_number}/events", "GET /repos/{owner}/{repo}/issues/{issue_number}/labels", "GET /repos/{owner}/{repo}/issues/{issue_number}/reactions", "GET /repos/{owner}/{repo}/issues/{issue_number}/timeline", "GET /repos/{owner}/{repo}/keys", "GET /repos/{owner}/{repo}/labels", "GET /repos/{owner}/{repo}/milestones", "GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels", "GET /repos/{owner}/{repo}/notifications", "GET /repos/{owner}/{repo}/pages/builds", "GET /repos/{owner}/{repo}/projects", "GET /repos/{owner}/{repo}/pulls", "GET /repos/{owner}/{repo}/pulls/comments", "GET /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions", "GET /repos/{owner}/{repo}/pulls/{pull_number}/comments", "GET /repos/{owner}/{repo}/pulls/{pull_number}/commits", "GET /repos/{owner}/{repo}/pulls/{pull_number}/files", "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews", "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments", "GET /repos/{owner}/{repo}/releases", "GET /repos/{owner}/{repo}/releases/{release_id}/assets", "GET /repos/{owner}/{repo}/releases/{release_id}/reactions", "GET /repos/{owner}/{repo}/secret-scanning/alerts", "GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}/locations", "GET /repos/{owner}/{repo}/stargazers", "GET /repos/{owner}/{repo}/subscribers", "GET /repos/{owner}/{repo}/tags", "GET /repos/{owner}/{repo}/teams", "GET /repos/{owner}/{repo}/topics", "GET /repositories", "GET /repositories/{repository_id}/environments/{environment_name}/secrets", "GET /search/code", "GET /search/commits", "GET /search/issues", "GET /search/labels", "GET /search/repositories", "GET /search/topics", "GET /search/users", "GET /teams/{team_id}/discussions", "GET /teams/{team_id}/discussions/{discussion_number}/comments", "GET /teams/{team_id}/discussions/{discussion_number}/comments/{comment_number}/reactions", "GET /teams/{team_id}/discussions/{discussion_number}/reactions", "GET /teams/{team_id}/invitations", "GET /teams/{team_id}/members", "GET /teams/{team_id}/projects", "GET /teams/{team_id}/repos", "GET /teams/{team_id}/teams", "GET /user/blocks", "GET /user/codespaces", "GET /user/codespaces/secrets", "GET /user/emails", "GET /user/followers", "GET /user/following", "GET /user/gpg_keys", "GET /user/installations", "GET /user/installations/{installation_id}/repositories", "GET /user/issues", "GET /user/keys", "GET /user/marketplace_purchases", "GET /user/marketplace_purchases/stubbed", "GET /user/memberships/orgs", "GET /user/migrations", "GET /user/migrations/{migration_id}/repositories", "GET /user/orgs", "GET /user/packages", "GET /user/packages/{package_type}/{package_name}/versions", "GET /user/public_emails", "GET /user/repos", "GET /user/repository_invitations", "GET /user/ssh_signing_keys", "GET /user/starred", "GET /user/subscriptions", "GET /user/teams", "GET /users", "GET /users/{username}/events", "GET /users/{username}/events/orgs/{org}", "GET /users/{username}/events/public", "GET /users/{username}/followers", "GET /users/{username}/following", "GET /users/{username}/gists", "GET /users/{username}/gpg_keys", "GET /users/{username}/keys", "GET /users/{username}/orgs", "GET /users/{username}/packages", "GET /users/{username}/projects", "GET /users/{username}/received_events", "GET /users/{username}/received_events/public", "GET /users/{username}/repos", "GET /users/{username}/ssh_signing_keys", "GET /users/{username}/starred", "GET /users/{username}/subscriptions"];
+const paginatingEndpoints = ["GET /app/hook/deliveries", "GET /app/installations", "GET /enterprises/{enterprise}/actions/permissions/organizations", "GET /enterprises/{enterprise}/actions/runner-groups", "GET /enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/organizations", "GET /enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/runners", "GET /enterprises/{enterprise}/actions/runners", "GET /enterprises/{enterprise}/code-scanning/alerts", "GET /enterprises/{enterprise}/secret-scanning/alerts", "GET /enterprises/{enterprise}/settings/billing/advanced-security", "GET /events", "GET /gists", "GET /gists/public", "GET /gists/starred", "GET /gists/{gist_id}/comments", "GET /gists/{gist_id}/commits", "GET /gists/{gist_id}/forks", "GET /installation/repositories", "GET /issues", "GET /licenses", "GET /marketplace_listing/plans", "GET /marketplace_listing/plans/{plan_id}/accounts", "GET /marketplace_listing/stubbed/plans", "GET /marketplace_listing/stubbed/plans/{plan_id}/accounts", "GET /networks/{owner}/{repo}/events", "GET /notifications", "GET /organizations", "GET /organizations/{org}/codespaces/secrets", "GET /organizations/{org}/codespaces/secrets/{secret_name}/repositories", "GET /orgs/{org}/actions/cache/usage-by-repository", "GET /orgs/{org}/actions/permissions/repositories", "GET /orgs/{org}/actions/runner-groups", "GET /orgs/{org}/actions/runner-groups/{runner_group_id}/repositories", "GET /orgs/{org}/actions/runner-groups/{runner_group_id}/runners", "GET /orgs/{org}/actions/runners", "GET /orgs/{org}/actions/secrets", "GET /orgs/{org}/actions/secrets/{secret_name}/repositories", "GET /orgs/{org}/blocks", "GET /orgs/{org}/code-scanning/alerts", "GET /orgs/{org}/codespaces", "GET /orgs/{org}/dependabot/secrets", "GET /orgs/{org}/dependabot/secrets/{secret_name}/repositories", "GET /orgs/{org}/events", "GET /orgs/{org}/failed_invitations", "GET /orgs/{org}/hooks", "GET /orgs/{org}/hooks/{hook_id}/deliveries", "GET /orgs/{org}/installations", "GET /orgs/{org}/invitations", "GET /orgs/{org}/invitations/{invitation_id}/teams", "GET /orgs/{org}/issues", "GET /orgs/{org}/members", "GET /orgs/{org}/migrations", "GET /orgs/{org}/migrations/{migration_id}/repositories", "GET /orgs/{org}/outside_collaborators", "GET /orgs/{org}/packages", "GET /orgs/{org}/packages/{package_type}/{package_name}/versions", "GET /orgs/{org}/projects", "GET /orgs/{org}/public_members", "GET /orgs/{org}/repos", "GET /orgs/{org}/secret-scanning/alerts", "GET /orgs/{org}/settings/billing/advanced-security", "GET /orgs/{org}/teams", "GET /orgs/{org}/teams/{team_slug}/discussions", "GET /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/comments", "GET /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/comments/{comment_number}/reactions", "GET /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/reactions", "GET /orgs/{org}/teams/{team_slug}/invitations", "GET /orgs/{org}/teams/{team_slug}/members", "GET /orgs/{org}/teams/{team_slug}/projects", "GET /orgs/{org}/teams/{team_slug}/repos", "GET /orgs/{org}/teams/{team_slug}/teams", "GET /projects/columns/{column_id}/cards", "GET /projects/{project_id}/collaborators", "GET /projects/{project_id}/columns", "GET /repos/{owner}/{repo}/actions/artifacts", "GET /repos/{owner}/{repo}/actions/caches", "GET /repos/{owner}/{repo}/actions/runners", "GET /repos/{owner}/{repo}/actions/runs", "GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts", "GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs", "GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs", "GET /repos/{owner}/{repo}/actions/secrets", "GET /repos/{owner}/{repo}/actions/workflows", "GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs", "GET /repos/{owner}/{repo}/assignees", "GET /repos/{owner}/{repo}/branches", "GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations", "GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs", "GET /repos/{owner}/{repo}/code-scanning/alerts", "GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/instances", "GET /repos/{owner}/{repo}/code-scanning/analyses", "GET /repos/{owner}/{repo}/codespaces", "GET /repos/{owner}/{repo}/codespaces/devcontainers", "GET /repos/{owner}/{repo}/codespaces/secrets", "GET /repos/{owner}/{repo}/collaborators", "GET /repos/{owner}/{repo}/comments", "GET /repos/{owner}/{repo}/comments/{comment_id}/reactions", "GET /repos/{owner}/{repo}/commits", "GET /repos/{owner}/{repo}/commits/{commit_sha}/comments", "GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls", "GET /repos/{owner}/{repo}/commits/{ref}/check-runs", "GET /repos/{owner}/{repo}/commits/{ref}/check-suites", "GET /repos/{owner}/{repo}/commits/{ref}/status", "GET /repos/{owner}/{repo}/commits/{ref}/statuses", "GET /repos/{owner}/{repo}/contributors", "GET /repos/{owner}/{repo}/dependabot/alerts", "GET /repos/{owner}/{repo}/dependabot/secrets", "GET /repos/{owner}/{repo}/deployments", "GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses", "GET /repos/{owner}/{repo}/environments", "GET /repos/{owner}/{repo}/environments/{environment_name}/deployment-branch-policies", "GET /repos/{owner}/{repo}/events", "GET /repos/{owner}/{repo}/forks", "GET /repos/{owner}/{repo}/hooks", "GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries", "GET /repos/{owner}/{repo}/invitations", "GET /repos/{owner}/{repo}/issues", "GET /repos/{owner}/{repo}/issues/comments", "GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions", "GET /repos/{owner}/{repo}/issues/events", "GET /repos/{owner}/{repo}/issues/{issue_number}/comments", "GET /repos/{owner}/{repo}/issues/{issue_number}/events", "GET /repos/{owner}/{repo}/issues/{issue_number}/labels", "GET /repos/{owner}/{repo}/issues/{issue_number}/reactions", "GET /repos/{owner}/{repo}/issues/{issue_number}/timeline", "GET /repos/{owner}/{repo}/keys", "GET /repos/{owner}/{repo}/labels", "GET /repos/{owner}/{repo}/milestones", "GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels", "GET /repos/{owner}/{repo}/notifications", "GET /repos/{owner}/{repo}/pages/builds", "GET /repos/{owner}/{repo}/projects", "GET /repos/{owner}/{repo}/pulls", "GET /repos/{owner}/{repo}/pulls/comments", "GET /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions", "GET /repos/{owner}/{repo}/pulls/{pull_number}/comments", "GET /repos/{owner}/{repo}/pulls/{pull_number}/commits", "GET /repos/{owner}/{repo}/pulls/{pull_number}/files", "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews", "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments", "GET /repos/{owner}/{repo}/releases", "GET /repos/{owner}/{repo}/releases/{release_id}/assets", "GET /repos/{owner}/{repo}/releases/{release_id}/reactions", "GET /repos/{owner}/{repo}/secret-scanning/alerts", "GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}/locations", "GET /repos/{owner}/{repo}/stargazers", "GET /repos/{owner}/{repo}/subscribers", "GET /repos/{owner}/{repo}/tags", "GET /repos/{owner}/{repo}/teams", "GET /repos/{owner}/{repo}/topics", "GET /repositories", "GET /repositories/{repository_id}/environments/{environment_name}/secrets", "GET /search/code", "GET /search/commits", "GET /search/issues", "GET /search/labels", "GET /search/repositories", "GET /search/topics", "GET /search/users", "GET /teams/{team_id}/discussions", "GET /teams/{team_id}/discussions/{discussion_number}/comments", "GET /teams/{team_id}/discussions/{discussion_number}/comments/{comment_number}/reactions", "GET /teams/{team_id}/discussions/{discussion_number}/reactions", "GET /teams/{team_id}/invitations", "GET /teams/{team_id}/members", "GET /teams/{team_id}/projects", "GET /teams/{team_id}/repos", "GET /teams/{team_id}/teams", "GET /user/blocks", "GET /user/codespaces", "GET /user/codespaces/secrets", "GET /user/emails", "GET /user/followers", "GET /user/following", "GET /user/gpg_keys", "GET /user/installations", "GET /user/installations/{installation_id}/repositories", "GET /user/issues", "GET /user/keys", "GET /user/marketplace_purchases", "GET /user/marketplace_purchases/stubbed", "GET /user/memberships/orgs", "GET /user/migrations", "GET /user/migrations/{migration_id}/repositories", "GET /user/orgs", "GET /user/packages", "GET /user/packages/{package_type}/{package_name}/versions", "GET /user/public_emails", "GET /user/repos", "GET /user/repository_invitations", "GET /user/ssh_signing_keys", "GET /user/starred", "GET /user/subscriptions", "GET /user/teams", "GET /users", "GET /users/{username}/events", "GET /users/{username}/events/orgs/{org}", "GET /users/{username}/events/public", "GET /users/{username}/followers", "GET /users/{username}/following", "GET /users/{username}/gists", "GET /users/{username}/gpg_keys", "GET /users/{username}/keys", "GET /users/{username}/orgs", "GET /users/{username}/packages", "GET /users/{username}/projects", "GET /users/{username}/received_events", "GET /users/{username}/received_events/public", "GET /users/{username}/repos", "GET /users/{username}/ssh_signing_keys", "GET /users/{username}/starred", "GET /users/{username}/subscriptions"];
 
 function isPaginatingEndpoint(arg) {
   if (typeof arg === "string") {
@@ -3818,7 +3822,6 @@ function isPaginatingEndpoint(arg) {
  * @param octokit Octokit instance
  * @param options Options passed to Octokit constructor
  */
-
 function paginateRest(octokit) {
   return {
     paginate: Object.assign(paginate.bind(null, octokit), {
@@ -14630,123 +14633,84 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
-/***/ 1886:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+/***/ 5784:
+/***/ (function(module, exports, __nccwpck_require__) {
 
-/**
- * @typedef {Object} XMLFormatterOptions
- *  @property {String} [indentation='    '] The value used for indentation
- *  @property {function(node): boolean} [filter] Return false to exclude the node.
- *  @property {Boolean} [collapseContent=false] True to keep content in the same line as the element. Only works if element contains at least one text node
- *  @property {String} [lineSeparator='\r\n'] The line separator to use
- *  @property {String} [whiteSpaceAtEndOfSelfclosingTag=false] to either end ad self closing tag with `<tag/>` or `<tag />`
- */
+"use strict";
 
-/**
- * @typedef {Object} XMLFormatterState
- * @param {String} content
- * @param {Number} level
- * @param {XMLFormatterOptions} options
- */
-
-/**
- * @param {XMLFormatterState} state
- * @return {void}
- */
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+const xml_parser_xo_1 = __importDefault(__nccwpck_require__(1502));
 function newLine(state) {
-    if (!state.options.indentation && !state.options.lineSeparator) return;
+    if (!state.options.indentation && !state.options.lineSeparator)
+        return;
     state.content += state.options.lineSeparator;
     let i;
     for (i = 0; i < state.level; i++) {
         state.content += state.options.indentation;
     }
 }
-
-/**
- * @param {XMLFormatterState} state
- * @param {String} content
- * @return {void}
- */
 function appendContent(state, content) {
     state.content += content;
 }
-
-/**
- * @param {Object} node
- * @param {XMLFormatterState} state
- * @param {Boolean} preserveSpace
- * @return {void}
- */
 function processNode(node, state, preserveSpace) {
     if (typeof node.content === 'string') {
-        processContentNode(node, state, preserveSpace);
-    } else if (node.type === 'Element') {
+        processContent(node.content, state, preserveSpace);
+    }
+    else if (node.type === 'Element') {
         processElementNode(node, state, preserveSpace);
-    } else if (node.type === 'ProcessingInstruction') {
-        processProcessingIntruction(node, state, preserveSpace);
-    } else {
+    }
+    else if (node.type === 'ProcessingInstruction') {
+        processProcessingIntruction(node, state);
+    }
+    else {
         throw new Error('Unknown node type: ' + node.type);
     }
 }
-
-/**
- * @param {Object} node
- * @param {XMLFormatterState} state
- * @param {Boolean} preserveSpace
- * @return {void}
- */
-function processContentNode(node, state, preserveSpace) {
+function processContent(content, state, preserveSpace) {
     if (!preserveSpace) {
-        node.content = node.content.trim();
+        content = content.trim();
     }
-    if (node.content.length > 0) {
+    if (content.length > 0) {
         if (!preserveSpace && state.content.length > 0) {
             newLine(state);
         }
-        appendContent(state, node.content);
+        appendContent(state, content);
     }
 }
-
-/**
- * @param {Object} node
- * @param {XMLFormatterState} state
- * @param {Boolean} preserveSpace
- * @return {void}
- */
 function processElementNode(node, state, preserveSpace) {
     if (!preserveSpace && state.content.length > 0) {
         newLine(state);
     }
-
     appendContent(state, '<' + node.name);
     processAttributes(state, node.attributes);
-
     if (node.children === null) {
-        const selfClosingNodeClosingTag = state.options.whiteSpaceAtEndOfSelfclosingTag ? ' />' : '/>'
+        const selfClosingNodeClosingTag = state.options.whiteSpaceAtEndOfSelfclosingTag ? ' />' : '/>';
         // self-closing node
         appendContent(state, selfClosingNodeClosingTag);
-    } else if (node.children.length === 0) {
+    }
+    else if (node.children.length === 0) {
         // empty node
         appendContent(state, '></' + node.name + '>');
-    } else {
-
+    }
+    else {
+        const nodeChildren = node.children;
         appendContent(state, '>');
-
         state.level++;
-
         let nodePreserveSpace = node.attributes['xml:space'] === 'preserve';
-
         if (!nodePreserveSpace && state.options.collapseContent) {
             let containsTextNodes = false;
             let containsTextNodesWithLineBreaks = false;
             let containsNonTextNodes = false;
-
-            node.children.forEach(function(child, index) {
+            nodeChildren.forEach(function (child, index) {
                 if (child.type === 'Text') {
                     if (child.content.includes('\n')) {
                         containsTextNodesWithLineBreaks = true;
                         child.content = child.content.trim();
-                    } else if (index === 0 || index === node.children.length - 1) {
+                    }
+                    else if (index === 0 || index === nodeChildren.length - 1) {
                         if (child.content.trim().length === 0) {
                             // If the text node is at the start or end and is empty, it should be ignored when formatting
                             child.content = '';
@@ -14755,48 +14719,34 @@ function processElementNode(node, state, preserveSpace) {
                     if (child.content.length > 0) {
                         containsTextNodes = true;
                     }
-                } else if (child.type === 'CDATA') {
+                }
+                else if (child.type === 'CDATA') {
                     containsTextNodes = true;
-                } else {
+                }
+                else {
                     containsNonTextNodes = true;
                 }
             });
-
             if (containsTextNodes && (!containsNonTextNodes || !containsTextNodesWithLineBreaks)) {
                 nodePreserveSpace = true;
             }
         }
-
-        node.children.forEach(function(child) {
-            processNode(child, state, preserveSpace || nodePreserveSpace, state.options);
+        nodeChildren.forEach(function (child) {
+            processNode(child, state, preserveSpace || nodePreserveSpace);
         });
-
         state.level--;
-
         if (!preserveSpace && !nodePreserveSpace) {
             newLine(state);
         }
         appendContent(state, '</' + node.name + '>');
     }
 }
-
-/**
- * @param {XMLFormatterState} state
- * @param {Record<String, String>} attributes
- * @return {void}
- */
 function processAttributes(state, attributes) {
-    Object.keys(attributes).forEach(function(attr) {
+    Object.keys(attributes).forEach(function (attr) {
         const escaped = attributes[attr].replace(/"/g, '&quot;');
         appendContent(state, ' ' + attr + '="' + escaped + '"');
     });
 }
-
-/**
- * @param {Object} node
- * @param {XMLFormatterState} state
- * @return {void}
- */
 function processProcessingIntruction(node, state) {
     if (state.content.length > 0) {
         newLine(state);
@@ -14805,290 +14755,268 @@ function processProcessingIntruction(node, state) {
     processAttributes(state, node.attributes);
     appendContent(state, '?>');
 }
-
-
 /**
  * Converts the given XML into human readable format.
- *
- * @param {String} xml
- * @param {XMLFormatterOptions} options
- * @returns {string}
  */
 function format(xml, options = {}) {
     options.indentation = 'indentation' in options ? options.indentation : '    ';
     options.collapseContent = options.collapseContent === true;
     options.lineSeparator = 'lineSeparator' in options ? options.lineSeparator : '\r\n';
-    options.whiteSpaceAtEndOfSelfclosingTag = !!options.whiteSpaceAtEndOfSelfclosingTag;
-
-    const parser = __nccwpck_require__(2820);
-    const parsedXml = parser(xml, {filter: options.filter});
-    const state = {content: '', level: 0, options: options};
-
-    if (parsedXml.declaration) {
-        processProcessingIntruction(parsedXml.declaration, state);
+    options.whiteSpaceAtEndOfSelfclosingTag = options.whiteSpaceAtEndOfSelfclosingTag === true;
+    options.throwOnFailure = options.throwOnFailure !== false;
+    try {
+        const parsedXml = (0, xml_parser_xo_1.default)(xml, { filter: options.filter });
+        const state = { content: '', level: 0, options: options };
+        if (parsedXml.declaration) {
+            processProcessingIntruction(parsedXml.declaration, state);
+        }
+        parsedXml.children.forEach(function (child) {
+            processNode(child, state, false);
+        });
+        return state.content
+            .replace(/\r\n/g, '\n')
+            .replace(/\n/g, options.lineSeparator);
     }
-
-    parsedXml.children.forEach(function(child) {
-        processNode(child, state, false);
-    });
-
-    return state.content
-        .replace(/\r\n/g, '\n')
-        .replace(/\n/g, options.lineSeparator);
+    catch (err) {
+        if (options.throwOnFailure) {
+            throw err;
+        }
+        return xml;
+    }
 }
-
-
 module.exports = format;
+exports["default"] = format;
 
 
 /***/ }),
 
-/***/ 2820:
-/***/ ((module) => {
+/***/ 1502:
+/***/ ((module, exports) => {
 
-/**
- * @typedef {Object} ParsingOptions
- *  @property {function(node)} filter Returns false to exclude a node. Default is true.
- */
+"use strict";
 
-/**
- * Parse the given XML string into an object.
- *
- * @param {String} xml
- * @param {ParsingOptions} [options]
- * @return {Object}
- * @api public
- */
-function parse(xml, options = {}) {
-
-    options.filter = options.filter || (() => true);
-
-    function nextChild() {
-        return tag() || content() || comment() || cdata();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.ParsingError = void 0;
+class ParsingError extends Error {
+    constructor(message, cause) {
+        super(message);
+        this.cause = cause;
     }
-
-    function nextRootChild() {
-        match(/\s*/);
-        return tag(true) || comment() || doctype() || processingInstruction(false);
-    }
-
-    function document() {
-        const decl = declaration();
-        const children = [];
-        let documentRootNode;
-        let child = nextRootChild();
-
-        while (child) {
-            if (child.node.type === 'Element') {
-                if (documentRootNode) {
-                    throw new Error('Found multiple root nodes');
-                }
-                documentRootNode = child.node;
+}
+exports.ParsingError = ParsingError;
+let parsingState;
+function nextChild() {
+    return element(false) || text() || comment() || cdata();
+}
+function nextRootChild() {
+    match(/\s*/);
+    return element(true) || comment() || doctype() || processingInstruction(false);
+}
+function parseDocument() {
+    const declaration = processingInstruction(true);
+    const children = [];
+    let documentRootNode;
+    let child = nextRootChild();
+    while (child) {
+        if (child.node.type === 'Element') {
+            if (documentRootNode) {
+                throw new Error('Found multiple root nodes');
             }
-
-            if (!child.excluded) {
-                children.push(child.node);
-            }
-
-            child = nextRootChild();
+            documentRootNode = child.node;
         }
-
-        if (!documentRootNode) {
-            throw new Error('Failed to parse XML');
+        if (!child.excluded) {
+            children.push(child.node);
         }
-
-        return {
-            declaration: decl ? decl.node : null,
-            root: documentRootNode,
-            children
-        };
+        child = nextRootChild();
     }
-
-    function declaration() {
-        return processingInstruction(true);
+    if (!documentRootNode) {
+        throw new ParsingError('Failed to parse XML', 'Root Element not found');
     }
-
-    function processingInstruction(matchDeclaration) {
-        const m = matchDeclaration ? match(/^<\?(xml)\s*/) : match(/^<\?([\w-:.]+)\s*/);
-        if (!m) return;
-
-        // tag
-        const node = {
-            name: m[1],
-            type: 'ProcessingInstruction',
-            attributes: {}
-        };
-
-        // attributes
-        while (!(eos() || is('?>'))) {
-            const attr = attribute();
-            if (!attr) return node;
+    if (parsingState.xml.length !== 0) {
+        throw new ParsingError('Failed to parse XML', 'Not Well-Formed XML');
+    }
+    return {
+        declaration: declaration ? declaration.node : null,
+        root: documentRootNode,
+        children
+    };
+}
+function processingInstruction(matchDeclaration) {
+    const m = matchDeclaration ? match(/^<\?(xml)\s*/) : match(/^<\?([\w-:.]+)\s*/);
+    if (!m)
+        return;
+    // tag
+    const node = {
+        name: m[1],
+        type: 'ProcessingInstruction',
+        attributes: {}
+    };
+    // attributes
+    while (!(eos() || is('?>'))) {
+        const attr = attribute();
+        if (attr) {
             node.attributes[attr.name] = attr.value;
         }
-
-        match(/\?>/);
-
-        return {
-            excluded: matchDeclaration ? false : options.filter(node) === false,
-            node
-        };
+        else {
+            return;
+        }
     }
-
-    function tag(matchRoot) {
-        const m = match(/^<([\w-:.]+)\s*/);
-        if (!m) return;
-
-        // name
-        const node = {
-            type: 'Element',
-            name: m[1],
-            attributes: {},
-            children: []
-        };
-
-        // attributes
-        while (!(eos() || is('>') || is('?>') || is('/>'))) {
-            const attr = attribute();
-            if (!attr) return node;
+    match(/\?>/);
+    return {
+        excluded: matchDeclaration ? false : parsingState.options.filter(node) === false,
+        node
+    };
+}
+function element(matchRoot) {
+    const m = match(/^<([\w-:.\u00C0-\u00FF]+)\s*/);
+    if (!m)
+        return;
+    // name
+    const node = {
+        type: 'Element',
+        name: m[1],
+        attributes: {},
+        children: []
+    };
+    const excluded = matchRoot ? false : parsingState.options.filter(node) === false;
+    // attributes
+    while (!(eos() || is('>') || is('?>') || is('/>'))) {
+        const attr = attribute();
+        if (attr) {
             node.attributes[attr.name] = attr.value;
         }
-
-        const excluded = matchRoot ? false : options.filter(node) === false;
-
-        // self closing tag
-        if (match(/^\s*\/>/)) {
-            node.children = null;
-            return {
-                excluded,
-                node
-            };
+        else {
+            return;
         }
-
-        match(/\??>/);
-
-        if (!excluded) {
-            // children
-            let child = nextChild();
-            while (child) {
-                if (!child.excluded) {
-                    node.children.push(child.node);
-                }
-                child = nextChild();
-            }
-        }
-
-        // closing
-        match(/^<\/[\w-:.]+>/);
-
+    }
+    // self closing tag
+    if (match(/^\s*\/>/)) {
+        node.children = null;
         return {
             excluded,
             node
         };
     }
-
-    function doctype() {
-        const m = match(/^<!DOCTYPE\s+[^>]*>/);
-        if (m) {
+    match(/\??>/);
+    // children
+    let child = nextChild();
+    while (child) {
+        if (!child.excluded) {
+            node.children.push(child.node);
+        }
+        child = nextChild();
+    }
+    // closing
+    match(/^<\/\s*[\w-:.\u00C0-\u00FF]+>/);
+    return {
+        excluded,
+        node
+    };
+}
+function doctype() {
+    const m = match(/^<!DOCTYPE\s+[^>]*>/);
+    if (m) {
+        const node = {
+            type: 'DocumentType',
+            content: m[0]
+        };
+        return {
+            excluded: parsingState.options.filter(node) === false,
+            node
+        };
+    }
+}
+function cdata() {
+    if (parsingState.xml.startsWith('<![CDATA[')) {
+        const endPositionStart = parsingState.xml.indexOf(']]>');
+        if (endPositionStart > -1) {
+            const endPositionFinish = endPositionStart + 3;
             const node = {
-                type: 'DocumentType',
-                content: m[0]
+                type: 'CDATA',
+                content: parsingState.xml.substring(0, endPositionFinish)
             };
+            parsingState.xml = parsingState.xml.slice(endPositionFinish);
             return {
-                excluded: options.filter(node) === false,
+                excluded: parsingState.options.filter(node) === false,
                 node
             };
         }
     }
-
-    function cdata() {
-        if (xml.startsWith('<![CDATA[')) {
-            const endPositionStart = xml.indexOf(']]>');
-            if (endPositionStart > -1) {
-                const endPositionFinish  = endPositionStart + 3;
-                const node = {
-                    type: 'CDATA',
-                    content: xml.substring(0, endPositionFinish)
-                };
-                xml = xml.slice(endPositionFinish);
-                return {
-                    excluded: options.filter(node) === false,
-                    node
-                };
-            }
-        }
+}
+function comment() {
+    const m = match(/^<!--[\s\S]*?-->/);
+    if (m) {
+        const node = {
+            type: 'Comment',
+            content: m[0]
+        };
+        return {
+            excluded: parsingState.options.filter(node) === false,
+            node
+        };
     }
-
-    function comment() {
-        const m = match(/^<!--[\s\S]*?-->/);
-        if (m) {
-            const node = {
-                type: 'Comment',
-                content: m[0]
-            };
-            return {
-                excluded: options.filter(node) === false,
-                node
-            };
-        }
+}
+function text() {
+    const m = match(/^([^<]+)/);
+    if (m) {
+        const node = {
+            type: 'Text',
+            content: m[1]
+        };
+        return {
+            excluded: parsingState.options.filter(node) === false,
+            node
+        };
     }
-
-    function content() {
-        const m = match(/^([^<]+)/);
-        if (m) {
-            const node = {
-                type: 'Text',
-                content: m[1]
-            };
-            return {
-                excluded: options.filter(node) === false,
-                node
-            };
-        }
+}
+function attribute() {
+    const m = match(/([\w-:.\u00C0-\u00FF]+)\s*=\s*("[^"]*"|'[^']*'|[\w\u00C0-\u00FF]+)\s*/);
+    if (m) {
+        return {
+            name: m[1],
+            value: stripQuotes(m[2])
+        };
     }
-
-    function attribute() {
-        const m = match(/([\w-:.]+)\s*=\s*("[^"]*"|'[^']*'|\w+)\s*/);
-        if (!m) return;
-        return {name: m[1], value: strip(m[2])}
-    }
-
-    /**
-     * Strip quotes from `val`.
-     */
-    function strip(val) {
-        return val.replace(/^['"]|['"]$/g, '');
-    }
-
-    /**
-     * Match `re` and advance the string.
-     */
-    function match(re) {
-        const m = xml.match(re);
-        if (!m) return;
-        xml = xml.slice(m[0].length);
+}
+function stripQuotes(val) {
+    return val.replace(/^['"]|['"]$/g, '');
+}
+/**
+ * Match `re` and advance the string.
+ */
+function match(re) {
+    const m = parsingState.xml.match(re);
+    if (m) {
+        parsingState.xml = parsingState.xml.slice(m[0].length);
         return m;
     }
-
-    /**
-     * End-of-source.
-     */
-    function eos() {
-        return 0 === xml.length;
-    }
-
-    /**
-     * Check for `prefix`.
-     */
-    function is(prefix) {
-        return 0 === xml.indexOf(prefix);
-    }
-
-    xml = xml.trim();
-
-    return document();
 }
-
-module.exports = parse;
+/**
+ * End-of-source.
+ */
+function eos() {
+    return 0 === parsingState.xml.length;
+}
+/**
+ * Check for `prefix`.
+ */
+function is(prefix) {
+    return 0 === parsingState.xml.indexOf(prefix);
+}
+/**
+ * Parse the given XML string into an object.
+ */
+function parseXml(xml, options = {}) {
+    xml = xml.trim();
+    const filter = options.filter || (() => true);
+    parsingState = {
+        xml,
+        options: Object.assign(Object.assign({}, options), { filter })
+    };
+    return parseDocument();
+}
+module.exports = parseXml;
+exports["default"] = parseXml;
 
 
 /***/ }),
