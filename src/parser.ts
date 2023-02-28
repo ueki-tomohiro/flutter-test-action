@@ -104,7 +104,7 @@ export class Parser {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _parseTestMessage(line: any): void {
     if (line['type'] === 'print') {
-      this._checkResult(TestDoneFromJSON(line))
+      // skip
     }
   }
 
