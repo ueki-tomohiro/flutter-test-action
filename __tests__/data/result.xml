@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <testsuites>
-    <testsuite id="0" package="/ci_test/test/date_util_test.dart" tests="2" failures="0" time="0">
-        <testcase classname="calcAge" time="2742">
-        </testcase>
-        <testcase classname="formatBirthDay" time="2806">
+    <testsuite id="0" package="forecast_controller_test.dart" tests="1" failures="0" time="0">
+        <testcase classname="Repository list view model testing forecast search" time="1803">
         </testcase>
     </testsuite>
-    <testsuite id="2" package="/ci_test/test/widget_test.dart" tests="1" failures="0" time="10">
-        <testcase classname="Counter increments smoke test" time="2895">
+    <testsuite id="2" package="forecast_test.dart" tests="1" failures="0" time="3">
+        <testcase classname="forecast page testing search test" time="2031">
         </testcase>
     </testsuite>
-    <testsuite id="7" package="/ci_test/test/list_item_test.dart" tests="0" failures="0" time="2853">
+    <testsuite id="4" package="widget_test.dart" tests="1" failures="0" time="3">
+        <testcase classname="Counter increments smoke test" time="2132">
+        </testcase>
     </testsuite>
 </testsuites>
