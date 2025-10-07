@@ -29,7 +29,7 @@
     "@actions/github": "^6.0.1",
     "@octokit/action": "^7.0.0",
     "lcov-parse": "^1.0.0",
-    "xml-formatter": "^3.6.3"
+    "xml-formatter": "^3.6.7"
   },
   "devDependencies": {
     "@types/jest": "^27.5.0",
