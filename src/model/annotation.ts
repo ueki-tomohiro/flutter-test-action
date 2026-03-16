@@ -1,6 +1,4 @@
-const annotationLevel = ['notice', 'warning', 'failure'] as const
-
-type AnnotationLevel = (typeof annotationLevel)[number]
+type AnnotationLevel = 'notice' | 'warning' | 'failure'
 
 /*
  * @see https://docs.github.com/en/rest/reference/checks#annotations-object

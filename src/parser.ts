@@ -1,4 +1,3 @@
-import * as core from '@actions/core'
 import * as os from 'os'
 import {Conclusion, Reporter} from './model/reporter'
 import {
@@ -15,6 +14,12 @@ import {promises} from 'fs'
 
 const {readFile, stat} = promises
 
+function reportActionError(message: string): void {
+  void import('@actions/core')
+    .then(core => core.error(message))
+    .catch(() => console.error(message))
+}
+
 export class Parser {
   readonly inputPath: string
   tests: TestSuite[] = []
@@ -30,7 +35,7 @@ export class Parser {
         const buf = await readFile(this.inputPath)
         resolve(Buffer.alloc(buf.length, buf).toString('utf8'))
       } catch (error) {
-        core.error((error as Error).message)
+        reportActionError((error as Error).message)
       }
     })
   }
@@ -56,7 +61,7 @@ export class Parser {
         this._parseTestDone(json)
       }
     } catch (error) {
-      core.error((error as Error).message)
+      reportActionError((error as Error).message)
     }
   }
 

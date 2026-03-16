@@ -1,6 +1,3 @@
-import * as core from '@actions/core'
-import * as github from '@actions/github'
-import {Octokit} from '@octokit/action'
 import {Reporter} from './model/reporter'
 
 type ExportReport = (args: {
@@ -20,6 +17,12 @@ export function escapeEmoji(input: string): string {
 }
 
 export const exportReport: ExportReport = async ({report, coverage}) => {
+  const [core, github, {Octokit}] = await Promise.all([
+    import('@actions/core'),
+    import('@actions/github'),
+    import('@octokit/action')
+  ])
+
   if (!core.getInput('token')) {
     return
   }

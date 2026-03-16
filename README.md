@@ -18,3 +18,13 @@
     coveragePath: coverage/lcov.info
   if: success() || failure()
 ```
+
+## Development
+
+```sh
+mise install
+pnpm install
+pnpm all
+```
+
+`pnpm install` runs `lefthook install`, so `pre-commit` formats and lints staged TypeScript files and `pre-push` runs the test suite.

@@ -1,17 +1,14 @@
 import {Annotation} from './annotation'
 
-const conclusion = [
-  'action_required',
-  'cancelled',
-  'failure',
-  'neutral',
-  'success',
-  'skipped',
-  'stale',
-  'timed_out'
-] as const
-
-export type Conclusion = (typeof conclusion)[number]
+export type Conclusion =
+  | 'action_required'
+  | 'cancelled'
+  | 'failure'
+  | 'neutral'
+  | 'success'
+  | 'skipped'
+  | 'stale'
+  | 'timed_out'
 
 export class Reporter {
   readonly summary: string

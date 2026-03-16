@@ -1,3 +1,4 @@
+import {describe, expect, test} from 'vitest'
 import {CoverageParser} from '../src/coverage'
 
 describe('Coverage', () => {

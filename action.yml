@@ -17,5 +17,5 @@ inputs:
     description: 'The GitHub authentication token'
     default: ${{ github.token }}
 runs:
-  using: 'node12'
+  using: 'node24'
   main: 'dist/index.js'

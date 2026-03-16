@@ -23,16 +23,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set Node.js 12.x
-        uses: actions/setup-node@v6.1.0
-        with:
-          node-version: 12.x
+      - uses: jdx/mise-action@v4
 
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Rebuild the dist/ directory
-        run: yarn build
+        run: pnpm package
 
       - name: Compare the expected and actual dist/ directories
         run: |

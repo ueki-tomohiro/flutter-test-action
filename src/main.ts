@@ -1,10 +1,10 @@
-import * as core from '@actions/core'
 import {CoverageParser} from './coverage'
 import {Parser} from './parser'
 import {exportReport} from './formatter'
 
 async function run(): Promise<void> {
   try {
+    const core = await import('@actions/core')
     let parser: Parser | undefined
     let coverage: CoverageParser | undefined
     if (core.getInput('machinePath')) {
@@ -23,6 +23,7 @@ async function run(): Promise<void> {
     })
   } catch (error) {
     if (error instanceof Error) {
+      const core = await import('@actions/core')
       core.setFailed(`${error.name}:${error.message}\n\n${error.stack}`)
     }
   }

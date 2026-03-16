@@ -1,3 +1,4 @@
+import {describe, expect, test} from 'vitest'
 import {Parser} from '../src/parser'
 import {promises} from 'fs'
 
