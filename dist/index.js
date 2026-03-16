@@ -601,7 +601,7 @@ class CoverageParser {
         return new Promise((resolve, reject) => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             parse(this.inputPath, (error, info) => {
-                if (error !== null) {
+                if (error) {
                     reject(error);
                     return;
                 }
@@ -610,7 +610,7 @@ class CoverageParser {
             });
         });
     }
-    toReport() {
+    toReport(threshold = 80) {
         const results = this.results?.flatMap(r => r.lines);
         if (!results) {
             return new reporter_1.Reporter({
@@ -618,7 +618,8 @@ class CoverageParser {
                 detail: '',
                 comment: '',
                 annotations: [],
-                status: 'failure'
+                status: 'failure',
+                outputs: {}
             });
         }
         const summary = ['### Coverage\n'].concat(this.results?.map(f => f.toSummary()) ?? []);
@@ -630,7 +631,7 @@ class CoverageParser {
         const state = summaryCount.found > 0
             ? Math.round((summaryCount.hit / summaryCount.found) * 1000) / 10
             : 0;
-        const icon = state > 80 ? ':white_check_mark:' : ':x:';
+        const icon = state >= threshold ? ':white_check_mark:' : ':x:';
         const comment = [];
         comment.push(`#### ${icon} Coverage`);
         comment.push('');
@@ -643,7 +644,12 @@ class CoverageParser {
             detail: '',
             comment: comment.join('\n'),
             annotations: [],
-            status: state > 80 ? 'success' : 'failure'
+            status: state >= threshold ? 'success' : 'failure',
+            outputs: {
+                coverage: state.toFixed(1),
+                'coverage-hit': summaryCount.hit.toString(),
+                'coverage-found': summaryCount.found.toString()
+            }
         });
     }
 }
@@ -660,7 +666,33 @@ exports.CoverageParser = CoverageParser;
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.exportReport = void 0;
 exports.escapeEmoji = escapeEmoji;
+const fs_1 = __nccwpck_require__(9896);
 const charactersLimit = 65535;
+const stepSummaryPath = process.env['GITHUB_STEP_SUMMARY'];
+const commentMarker = '<!-- flutter-test-action-comment -->';
+function combineConclusion(report, coverage) {
+    const conclusions = [report?.status, coverage?.status].filter((status) => status !== undefined);
+    if (conclusions.length === 0) {
+        return 'failure';
+    }
+    return conclusions.every(status => status === 'success')
+        ? 'success'
+        : 'failure';
+}
+async function appendStepSummary(title, summary, detail) {
+    if (!stepSummaryPath) {
+        return;
+    }
+    const content = [`## ${title}`, '', summary];
+    if (detail) {
+        content.push('', detail);
+    }
+    content.push('', '');
+    await fs_1.promises.appendFile(stepSummaryPath, content.join('\n'), 'utf8');
+}
+function buildCommentBody(comment) {
+    return `${commentMarker}\n${comment}`;
+}
 /**
  * Escape emoji sequences.
  */
@@ -669,62 +701,95 @@ function escapeEmoji(input) {
     return input.replace(regex, ``); // replace emoji with empty string (\\u${(match.codePointAt(0) || "").toString(16)})
 }
 const exportReport = async ({ report, coverage }) => {
-    const [core, github, { Octokit }] = await Promise.all([
+    const [core, github] = await Promise.all([
         Promise.all(/* import() */[__nccwpck_require__.e(662), __nccwpck_require__.e(623)]).then(__nccwpck_require__.bind(__nccwpck_require__, 7623)),
-        Promise.all(/* import() */[__nccwpck_require__.e(662), __nccwpck_require__.e(488), __nccwpck_require__.e(874)]).then(__nccwpck_require__.bind(__nccwpck_require__, 6874)),
-        Promise.all(/* import() */[__nccwpck_require__.e(488), __nccwpck_require__.e(774)]).then(__nccwpck_require__.bind(__nccwpck_require__, 5774))
+        Promise.all(/* import() */[__nccwpck_require__.e(662), __nccwpck_require__.e(573)]).then(__nccwpck_require__.bind(__nccwpck_require__, 2573))
     ]);
-    if (!core.getInput('token')) {
+    const token = core.getInput('token');
+    const conclusion = combineConclusion(report, coverage);
+    let title = core.getInput('title');
+    if (title.length > charactersLimit) {
+        core.error(`The 'title' will be truncated because the character limit (${charactersLimit}) exceeded.`);
+        title = title.substring(0, charactersLimit);
+    }
+    let summary = report?.summary ?? '';
+    summary += coverage?.summary ? `\n${coverage.summary}` : '';
+    if (summary.length > charactersLimit) {
+        core.error(`The 'summary' will be truncated because the character limit (${charactersLimit}) exceeded.`);
+        summary = summary.substring(0, charactersLimit);
+    }
+    let reportDetail = report?.detail ?? '';
+    reportDetail += coverage?.detail ? `\n${coverage.detail}` : '';
+    if (reportDetail.length > charactersLimit) {
+        core.error(`The 'text' will be truncated because the character limit (${charactersLimit}) exceeded.`);
+        reportDetail = reportDetail.substring(0, charactersLimit);
+    }
+    const annotations = report?.annotations ?? [];
+    if (annotations.length > 50) {
+        core.error('Annotations that exceed the limit (50) will be truncated.');
+    }
+    let comment = report?.comment ?? '';
+    comment += coverage?.comment ? `\n${coverage.comment}` : '';
+    core.setOutput('conclusion', conclusion);
+    for (const [name, value] of Object.entries({
+        ...(report?.outputs ?? {}),
+        ...(coverage?.outputs ?? {})
+    })) {
+        core.setOutput(name, value);
+    }
+    try {
+        await appendStepSummary(title, summary, reportDetail);
+    }
+    catch (error) {
+        core.error(`Failed to write step summary: ${error.message}`);
+    }
+    if (!token) {
+        core.info('Skipping GitHub check run and pull request comment because no token was provided.');
         return;
     }
     try {
-        const octokit = new Octokit();
+        const octokit = github.getOctokit(token);
         const owner = github.context.repo.owner;
         const repo = github.context.repo.repo;
         const pr = github.context.payload.pull_request;
         const sha = (pr && pr.head.sha) || github.context.sha;
         const issueNumber = pr?.number || github.context.issue.number;
-        let title = core.getInput('title');
-        if (title.length > charactersLimit) {
-            core.error(`The 'title' will be truncated because the character limit (${charactersLimit}) exceeded.`);
-            title = title.substring(0, charactersLimit);
-        }
-        let summary = report?.summary ?? '';
-        summary += coverage?.summary ? `\n${coverage.summary}` : '';
-        if (summary.length > charactersLimit) {
-            core.error(`The 'summary' will be truncated because the character limit (${charactersLimit}) exceeded.`);
-            summary = summary.substring(0, charactersLimit);
-        }
-        let reportDetail = report?.detail ?? '';
-        reportDetail += coverage?.detail ? `\n${coverage.detail}` : '';
-        if (reportDetail.length > charactersLimit) {
-            core.error(`The 'text' will be truncated because the character limit (${charactersLimit}) exceeded.`);
-            reportDetail = reportDetail.substring(0, charactersLimit);
-        }
-        const annotations = report?.annotations ?? [];
-        if (annotations.length > 50) {
-            core.error('Annotations that exceed the limit (50) will be truncated.');
-        }
-        let comment = report?.comment ?? '';
-        comment += coverage?.comment ? `\n${coverage.comment}` : '';
         if (comment && issueNumber) {
-            await octokit.issues.createComment({
+            const body = buildCommentBody(comment);
+            const comments = await octokit.paginate(octokit.rest.issues.listComments, {
                 owner,
                 repo,
-                issue_number: issueNumber,
-                body: comment
+                issue_number: issueNumber
             });
+            const existingComment = comments.find(current => typeof current.body === 'string' &&
+                current.body.includes(commentMarker));
+            if (existingComment) {
+                await octokit.rest.issues.updateComment({
+                    owner,
+                    repo,
+                    comment_id: existingComment.id,
+                    body
+                });
+            }
+            else {
+                await octokit.rest.issues.createComment({
+                    owner,
+                    repo,
+                    issue_number: issueNumber,
+                    body
+                });
+            }
         }
         else if (comment) {
             core.info('Skipping pull request comment because the workflow is not running for a pull request.');
         }
-        await octokit.checks.create({
+        await octokit.rest.checks.create({
             owner,
             repo,
             name: title,
             head_sha: sha,
             status: 'completed',
-            conclusion: report?.status === 'success' ? 'success' : 'failure',
+            conclusion,
             output: {
                 title,
                 summary,
@@ -965,12 +1030,14 @@ class Reporter {
     comment;
     annotations;
     status;
-    constructor({ summary, detail, comment, annotations, status }) {
+    outputs;
+    constructor({ summary, detail, comment, annotations, status, outputs = {} }) {
         this.summary = summary;
         this.detail = detail;
         this.comment = comment;
         this.annotations = annotations;
         this.status = status;
+        this.outputs = outputs;
     }
 }
 exports.Reporter = Reporter;
@@ -1286,55 +1353,16 @@ exports.TestSuiteFromJSON = TestSuiteFromJSON;
 
 "use strict";
 
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.Parser = void 0;
-const os = __importStar(__nccwpck_require__(857));
 const reporter_1 = __nccwpck_require__(2611);
 const model_1 = __nccwpck_require__(5852);
 const xml_formatter_1 = __importDefault(__nccwpck_require__(5313));
 const fs_1 = __nccwpck_require__(9896);
-const { readFile, stat } = fs_1.promises;
-function reportActionError(message) {
-    void Promise.all(/* import() */[__nccwpck_require__.e(662), __nccwpck_require__.e(623)]).then(__nccwpck_require__.bind(__nccwpck_require__, 7623))
-        .then(core => core.error(message))
-        .catch(() => console.error(message));
-}
+const { readFile } = fs_1.promises;
 class Parser {
     inputPath;
     tests = [];
@@ -1342,20 +1370,12 @@ class Parser {
         this.inputPath = inputPath;
     }
     async _load() {
-        return new Promise(async (resolve) => {
-            try {
-                await stat(this.inputPath);
-                const buf = await readFile(this.inputPath);
-                resolve(Buffer.alloc(buf.length, buf).toString('utf8'));
-            }
-            catch (error) {
-                reportActionError(error.message);
-            }
-        });
+        const buf = await readFile(this.inputPath);
+        return Buffer.from(buf).toString('utf8');
     }
     async parseObject() {
         const file = await this._load();
-        const lines = file.split(os.EOL).filter(line => line.length > 0);
+        const lines = file.split(/\r?\n/u).filter(line => line.length > 0);
         for (const line of lines) {
             this._parseLine(line);
         }
@@ -1373,7 +1393,7 @@ class Parser {
             }
         }
         catch (error) {
-            reportActionError(error.message);
+            throw new Error(`Failed to parse machine output: ${error.message}`);
         }
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1484,7 +1504,16 @@ class Parser {
             detail: detail.concat(detailColumn).join('\n'),
             comment: comment.join('\n'),
             annotations,
-            status
+            status,
+            outputs: {
+                tests: allTests.length.toString(),
+                passed: allTests
+                    .filter(t => t.result?.state === 'success')
+                    .length.toString(),
+                failed: allTests
+                    .filter(t => t.result?.state === 'failure')
+                    .length.toString()
+            }
         });
     }
 }
@@ -1621,14 +1650,6 @@ module.exports = require("node:events");
 
 /***/ }),
 
-/***/ 1455:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("node:fs/promises");
-
-/***/ }),
-
 /***/ 7067:
 /***/ ((module) => {
 
@@ -1653,14 +1674,6 @@ module.exports = require("node:net");
 
 /***/ }),
 
-/***/ 6760:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("node:path");
-
-/***/ }),
-
 /***/ 643:
 /***/ ((module) => {
 
@@ -1677,27 +1690,11 @@ module.exports = require("node:querystring");
 
 /***/ }),
 
-/***/ 99:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("node:sqlite");
-
-/***/ }),
-
 /***/ 7075:
 /***/ ((module) => {
 
 "use strict";
 module.exports = require("node:stream");
-
-/***/ }),
-
-/***/ 7997:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("node:timers");
 
 /***/ }),
 
@@ -1811,8 +1808,8 @@ module.exports = require("util");
 /******/ 		}
 /******/ 		// Create a new module (and put it into the cache)
 /******/ 		var module = __webpack_module_cache__[moduleId] = {
-/******/ 			id: moduleId,
-/******/ 			loaded: false,
+/******/ 			// no module.id needed
+/******/ 			// no module.loaded needed
 /******/ 			exports: {}
 /******/ 		};
 /******/ 	
@@ -1824,9 +1821,6 @@ module.exports = require("util");
 /******/ 		} finally {
 /******/ 			if(threw) delete __webpack_module_cache__[moduleId];
 /******/ 		}
-/******/ 	
-/******/ 		// Flag the module as loaded
-/******/ 		module.loaded = true;
 /******/ 	
 /******/ 		// Return the exports of the module
 /******/ 		return module.exports;
@@ -1916,15 +1910,6 @@ module.exports = require("util");
 /******/ 		};
 /******/ 	})();
 /******/ 	
-/******/ 	/* webpack/runtime/node module decorator */
-/******/ 	(() => {
-/******/ 		__nccwpck_require__.nmd = (module) => {
-/******/ 			module.paths = [];
-/******/ 			if (!module.children) module.children = [];
-/******/ 			return module;
-/******/ 		};
-/******/ 	})();
-/******/ 	
 /******/ 	/* webpack/runtime/compat */
 /******/ 	
 /******/ 	if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = __dirname + "/";
@@ -1982,24 +1967,35 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 const coverage_1 = __nccwpck_require__(7474);
 const parser_1 = __nccwpck_require__(4883);
 const formatter_1 = __nccwpck_require__(3196);
+function parseCoverageThreshold(value) {
+    const threshold = Number(value);
+    if (Number.isNaN(threshold) || threshold < 0 || threshold > 100) {
+        throw new Error('coverageThreshold must be a number between 0 and 100.');
+    }
+    return threshold;
+}
 async function run() {
     try {
         const core = await Promise.all(/* import() */[__nccwpck_require__.e(662), __nccwpck_require__.e(623)]).then(__nccwpck_require__.bind(__nccwpck_require__, 7623));
         let parser;
         let coverage;
-        if (core.getInput('machinePath')) {
-            const machinePath = core.getInput('machinePath');
+        const machinePath = core.getInput('machinePath');
+        const coveragePath = core.getInput('coveragePath');
+        if (!machinePath && !coveragePath) {
+            throw new Error('Either machinePath or coveragePath must be provided.');
+        }
+        if (machinePath) {
             parser = new parser_1.Parser(machinePath);
             await parser.parseObject();
         }
-        if (core.getInput('coveragePath')) {
-            const coveragePath = core.getInput('coveragePath');
+        if (coveragePath) {
             coverage = new coverage_1.CoverageParser(coveragePath);
             await coverage.parseObject();
         }
+        const coverageThreshold = parseCoverageThreshold(core.getInput('coverageThreshold') || '80');
         await (0, formatter_1.exportReport)({
             report: parser?.toReport(),
-            coverage: coverage?.toReport()
+            coverage: coverage?.toReport(coverageThreshold)
         });
     }
     catch (error) {

@@ -14,8 +14,8 @@ export class CoverageParser {
   async parseObject(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      parse(this.inputPath, (error: string, info: any) => {
-        if (error !== null) {
+      parse(this.inputPath, (error: Error | null, info: any) => {
+        if (error) {
           reject(error)
           return
         }
@@ -25,7 +25,7 @@ export class CoverageParser {
     })
   }
 
-  toReport(): Reporter {
+  toReport(threshold = 80): Reporter {
     const results = this.results?.flatMap(r => r.lines)
     if (!results) {
       return new Reporter({
@@ -33,7 +33,8 @@ export class CoverageParser {
         detail: '',
         comment: '',
         annotations: [],
-        status: 'failure'
+        status: 'failure',
+        outputs: {}
       })
     }
 
@@ -51,7 +52,7 @@ export class CoverageParser {
       summaryCount.found > 0
         ? Math.round((summaryCount.hit / summaryCount.found) * 1000) / 10
         : 0
-    const icon = state > 80 ? ':white_check_mark:' : ':x:'
+    const icon = state >= threshold ? ':white_check_mark:' : ':x:'
 
     const comment: string[] = []
     comment.push(`#### ${icon} Coverage`)
@@ -66,7 +67,12 @@ export class CoverageParser {
       detail: '',
       comment: comment.join('\n'),
       annotations: [],
-      status: state > 80 ? 'success' : 'failure'
+      status: state >= threshold ? 'success' : 'failure',
+      outputs: {
+        coverage: state.toFixed(1),
+        'coverage-hit': summaryCount.hit.toString(),
+        'coverage-found': summaryCount.found.toString()
+      }
     })
   }
 }

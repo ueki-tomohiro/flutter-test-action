@@ -33,7 +33,6 @@
   "dependencies": {
     "@actions/core": "^3.0.0",
     "@actions/github": "^9.0.0",
-    "@octokit/action": "^8.0.4",
     "lcov-parse": "^1.0.0",
     "xml-formatter": "^3.7.0"
   },

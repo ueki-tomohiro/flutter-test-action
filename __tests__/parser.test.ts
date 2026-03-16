@@ -56,5 +56,12 @@ describe('Paraser', () => {
     await parser.parseObject()
     const report = parser.toReport()
     expect(report.annotations.length).toBe(0)
+    expect(report.outputs['tests']).toBe('3')
+  })
+
+  test('fails when input file does not exist', async () => {
+    const parser = new Parser('__tests__/data/missing.json')
+
+    await expect(parser.parseObject()).rejects.toThrow(/missing\.json/)
   })
 })

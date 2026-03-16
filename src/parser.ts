@@ -1,4 +1,3 @@
-import * as os from 'os'
 import {Conclusion, Reporter} from './model/reporter'
 import {
   TestDone,
@@ -12,13 +11,7 @@ import {Annotation} from './model/annotation'
 import format from 'xml-formatter'
 import {promises} from 'fs'
 
-const {readFile, stat} = promises
-
-function reportActionError(message: string): void {
-  void import('@actions/core')
-    .then(core => core.error(message))
-    .catch(() => console.error(message))
-}
+const {readFile} = promises
 
 export class Parser {
   readonly inputPath: string
@@ -29,20 +22,13 @@ export class Parser {
   }
 
   async _load(): Promise<string> {
-    return new Promise<string>(async resolve => {
-      try {
-        await stat(this.inputPath)
-        const buf = await readFile(this.inputPath)
-        resolve(Buffer.alloc(buf.length, buf).toString('utf8'))
-      } catch (error) {
-        reportActionError((error as Error).message)
-      }
-    })
+    const buf = await readFile(this.inputPath)
+    return Buffer.from(buf).toString('utf8')
   }
 
   async parseObject(): Promise<void> {
     const file = await this._load()
-    const lines = file.split(os.EOL).filter(line => line.length > 0)
+    const lines = file.split(/\r?\n/u).filter(line => line.length > 0)
 
     for (const line of lines) {
       this._parseLine(line)
@@ -61,7 +47,9 @@ export class Parser {
         this._parseTestDone(json)
       }
     } catch (error) {
-      reportActionError((error as Error).message)
+      throw new Error(
+        `Failed to parse machine output: ${(error as Error).message}`
+      )
     }
   }
 
@@ -191,7 +179,16 @@ export class Parser {
       detail: detail.concat(detailColumn).join('\n'),
       comment: comment.join('\n'),
       annotations,
-      status
+      status,
+      outputs: {
+        tests: allTests.length.toString(),
+        passed: allTests
+          .filter(t => t.result?.state === 'success')
+          .length.toString(),
+        failed: allTests
+          .filter(t => t.result?.state === 'failure')
+          .length.toString()
+      }
     })
   }
 }

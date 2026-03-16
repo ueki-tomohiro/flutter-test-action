@@ -1,4 +1,5 @@
 import {Reporter} from './model/reporter'
+import {promises} from 'fs'
 
 type ExportReport = (args: {
   report?: Reporter
@@ -6,6 +7,47 @@ type ExportReport = (args: {
 }) => Promise<void>
 
 const charactersLimit = 65535
+const stepSummaryPath = process.env['GITHUB_STEP_SUMMARY']
+const commentMarker = '<!-- flutter-test-action-comment -->'
+
+function combineConclusion(
+  report?: Reporter,
+  coverage?: Reporter
+): 'success' | 'failure' {
+  const conclusions = [report?.status, coverage?.status].filter(
+    (status): status is Reporter['status'] => status !== undefined
+  )
+
+  if (conclusions.length === 0) {
+    return 'failure'
+  }
+
+  return conclusions.every(status => status === 'success')
+    ? 'success'
+    : 'failure'
+}
+
+async function appendStepSummary(
+  title: string,
+  summary: string,
+  detail: string
+): Promise<void> {
+  if (!stepSummaryPath) {
+    return
+  }
+
+  const content = [`## ${title}`, '', summary]
+  if (detail) {
+    content.push('', detail)
+  }
+  content.push('', '')
+
+  await promises.appendFile(stepSummaryPath, content.join('\n'), 'utf8')
+}
+
+function buildCommentBody(comment: string): string {
+  return `${commentMarker}\n${comment}`
+}
 
 /**
  * Escape emoji sequences.
@@ -17,18 +59,70 @@ export function escapeEmoji(input: string): string {
 }
 
 export const exportReport: ExportReport = async ({report, coverage}) => {
-  const [core, github, {Octokit}] = await Promise.all([
+  const [core, github] = await Promise.all([
     import('@actions/core'),
-    import('@actions/github'),
-    import('@octokit/action')
+    import('@actions/github')
   ])
+  const token = core.getInput('token')
+  const conclusion = combineConclusion(report, coverage)
 
-  if (!core.getInput('token')) {
+  let title = core.getInput('title')
+  if (title.length > charactersLimit) {
+    core.error(
+      `The 'title' will be truncated because the character limit (${charactersLimit}) exceeded.`
+    )
+    title = title.substring(0, charactersLimit)
+  }
+
+  let summary = report?.summary ?? ''
+  summary += coverage?.summary ? `\n${coverage.summary}` : ''
+  if (summary.length > charactersLimit) {
+    core.error(
+      `The 'summary' will be truncated because the character limit (${charactersLimit}) exceeded.`
+    )
+    summary = summary.substring(0, charactersLimit)
+  }
+
+  let reportDetail = report?.detail ?? ''
+  reportDetail += coverage?.detail ? `\n${coverage.detail}` : ''
+  if (reportDetail.length > charactersLimit) {
+    core.error(
+      `The 'text' will be truncated because the character limit (${charactersLimit}) exceeded.`
+    )
+    reportDetail = reportDetail.substring(0, charactersLimit)
+  }
+
+  const annotations = report?.annotations ?? []
+  if (annotations.length > 50) {
+    core.error('Annotations that exceed the limit (50) will be truncated.')
+  }
+
+  let comment = report?.comment ?? ''
+  comment += coverage?.comment ? `\n${coverage.comment}` : ''
+
+  core.setOutput('conclusion', conclusion)
+  for (const [name, value] of Object.entries({
+    ...(report?.outputs ?? {}),
+    ...(coverage?.outputs ?? {})
+  })) {
+    core.setOutput(name, value)
+  }
+
+  try {
+    await appendStepSummary(title, summary, reportDetail)
+  } catch (error) {
+    core.error(`Failed to write step summary: ${(error as Error).message}`)
+  }
+
+  if (!token) {
+    core.info(
+      'Skipping GitHub check run and pull request comment because no token was provided.'
+    )
     return
   }
 
   try {
-    const octokit = new Octokit()
+    const octokit = github.getOctokit(token)
 
     const owner = github.context.repo.owner
     const repo = github.context.repo.repo
@@ -37,60 +131,50 @@ export const exportReport: ExportReport = async ({report, coverage}) => {
     const sha = (pr && pr.head.sha) || github.context.sha
     const issueNumber = pr?.number || github.context.issue.number
 
-    let title = core.getInput('title')
-    if (title.length > charactersLimit) {
-      core.error(
-        `The 'title' will be truncated because the character limit (${charactersLimit}) exceeded.`
-      )
-      title = title.substring(0, charactersLimit)
-    }
-
-    let summary = report?.summary ?? ''
-    summary += coverage?.summary ? `\n${coverage.summary}` : ''
-    if (summary.length > charactersLimit) {
-      core.error(
-        `The 'summary' will be truncated because the character limit (${charactersLimit}) exceeded.`
-      )
-      summary = summary.substring(0, charactersLimit)
-    }
-
-    let reportDetail = report?.detail ?? ''
-    reportDetail += coverage?.detail ? `\n${coverage.detail}` : ''
-    if (reportDetail.length > charactersLimit) {
-      core.error(
-        `The 'text' will be truncated because the character limit (${charactersLimit}) exceeded.`
-      )
-      reportDetail = reportDetail.substring(0, charactersLimit)
-    }
-
-    const annotations = report?.annotations ?? []
-    if (annotations.length > 50) {
-      core.error('Annotations that exceed the limit (50) will be truncated.')
-    }
-
-    let comment = report?.comment ?? ''
-    comment += coverage?.comment ? `\n${coverage.comment}` : ''
-
     if (comment && issueNumber) {
-      await octokit.issues.createComment({
-        owner,
-        repo,
-        issue_number: issueNumber,
-        body: comment
-      })
+      const body = buildCommentBody(comment)
+      const comments = await octokit.paginate(
+        octokit.rest.issues.listComments,
+        {
+          owner,
+          repo,
+          issue_number: issueNumber
+        }
+      )
+      const existingComment = comments.find(
+        current =>
+          typeof current.body === 'string' &&
+          current.body.includes(commentMarker)
+      )
+
+      if (existingComment) {
+        await octokit.rest.issues.updateComment({
+          owner,
+          repo,
+          comment_id: existingComment.id,
+          body
+        })
+      } else {
+        await octokit.rest.issues.createComment({
+          owner,
+          repo,
+          issue_number: issueNumber,
+          body
+        })
+      }
     } else if (comment) {
       core.info(
         'Skipping pull request comment because the workflow is not running for a pull request.'
       )
     }
 
-    await octokit.checks.create({
+    await octokit.rest.checks.create({
       owner,
       repo,
       name: title,
       head_sha: sha,
       status: 'completed',
-      conclusion: report?.status === 'success' ? 'success' : 'failure',
+      conclusion,
       output: {
         title,
         summary,
