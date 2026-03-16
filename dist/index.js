@@ -683,6 +683,7 @@ const exportReport = async ({ report, coverage }) => {
         const repo = github.context.repo.repo;
         const pr = github.context.payload.pull_request;
         const sha = (pr && pr.head.sha) || github.context.sha;
+        const issueNumber = pr?.number || github.context.issue.number;
         let title = core.getInput('title');
         if (title.length > charactersLimit) {
             core.error(`The 'title' will be truncated because the character limit (${charactersLimit}) exceeded.`);
@@ -706,13 +707,16 @@ const exportReport = async ({ report, coverage }) => {
         }
         let comment = report?.comment ?? '';
         comment += coverage?.comment ? `\n${coverage.comment}` : '';
-        if (comment) {
+        if (comment && issueNumber) {
             await octokit.issues.createComment({
                 owner,
                 repo,
-                issue_number: github.context.issue.number,
+                issue_number: issueNumber,
                 body: comment
             });
+        }
+        else if (comment) {
+            core.info('Skipping pull request comment because the workflow is not running for a pull request.');
         }
         await octokit.checks.create({
             owner,

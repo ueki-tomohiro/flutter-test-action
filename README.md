@@ -55,7 +55,7 @@ You can pass only `machinePath`, only `coveragePath`, or both.
 
 ## Example Workflow
 
-This action is designed primarily for `pull_request` workflows, because it posts a pull request comment in addition to creating a check run.
+This action is designed primarily for `pull_request` workflows, because it posts a pull request comment in addition to creating a check run. On non-`pull_request` events such as `push`, it skips the comment and only creates the check run.
 
 ```yaml
 name: flutter-test-report
@@ -108,7 +108,8 @@ jobs:
 ## Notes
 
 - On pull requests from forks, `GITHUB_TOKEN` is often read-only. In that case, GitHub may block the comment or check creation unless repository settings allow write access for forked PR workflows.
-- Because the action uses `issues.createComment`, it is best used on `pull_request` events rather than plain `push` workflows.
+- On non-`pull_request` events, the action skips the PR comment because there is no issue/PR number in the workflow context.
+- Because the action uses `issues.createComment` on pull requests, it is best used on `pull_request` events when you want the comment as well as the check run.
 - This repository commits `dist/` on purpose. GitHub Actions execute the checked-in bundle referenced by `action.yml`.
 
 ## Development
