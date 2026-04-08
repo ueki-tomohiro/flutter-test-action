@@ -41,7 +41,7 @@
     "@vercel/ncc": "^0.38.4",
     "globals": "^17.4.0",
     "js-yaml": "^4.1.1",
-    "lefthook": "^2.1.4",
+    "lefthook": "^2.1.5",
     "oxfmt": "^0.44.0",
     "oxlint": "^1.57.0",
     "oxlint-tsgolint": "^0.20.0",
