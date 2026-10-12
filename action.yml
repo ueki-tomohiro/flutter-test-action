@@ -1,40 +1,82 @@
 name: 'Flutter Test Report'
-description: 'create Flutter test report'
+description: 'Run flutter test and report failures, coverage and coverage of changed lines on the pull request'
 author: 'Tomohiro Ueki'
 inputs:
-  coveragePath:
+  workingDirectory:
     required: false
-    description: 'coverage/lcov.info'
-  machinePath:
+    description: 'Directory to run flutter test in'
+    default: '.'
+  testArgs:
     required: false
-    description: 'input flutter test --machine result path'
-  title:
+    description: 'Extra arguments for flutter test, such as "--concurrency 8 test/unit"'
+    default: ''
+  flutterCommand:
     required: false
-    description: 'Title for the check results'
-    default: 'Flutter test results'
+    description: 'Command used to run Flutter, such as "fvm flutter"'
+    default: 'flutter'
+  coverage:
+    required: false
+    description: 'Run with --coverage and report coverage from coverage/lcov.info'
+    default: 'false'
   coverageThreshold:
     required: false
-    description: 'Minimum coverage percentage required for success'
-    default: '80'
+    description: 'Minimum overall line coverage in percent. Empty means report only'
+    default: ''
+  changedLinesCoverageThreshold:
+    required: false
+    description: 'Minimum coverage of the lines changed by the pull request in percent. Empty means report only'
+    default: ''
+  annotateUncoveredLines:
+    required: false
+    description: 'Annotate changed lines that are not covered by tests'
+    default: 'true'
+  machinePath:
+    required: false
+    description: 'Report an existing `flutter test --machine` output instead of running the tests'
+    default: ''
+  coveragePath:
+    required: false
+    description: 'Report an existing lcov.info instead of running the tests'
+    default: ''
+  failOnError:
+    required: false
+    description: 'Fail the step when tests fail or a threshold is not met'
+    default: 'true'
+  title:
+    required: false
+    description: 'Name of the check run. Also identifies the pull request comment'
+    default: 'Flutter test results'
   token:
     required: false
-    description: 'The GitHub authentication token'
+    description: 'GitHub token used for the check run, the pull request comment and the changed files. Empty disables them'
     default: ${{ github.token }}
 outputs:
   conclusion:
-    description: 'Combined conclusion for tests and coverage'
+    description: 'success or failure'
   tests:
-    description: 'Total number of parsed tests'
+    description: 'Number of tests'
   passed:
-    description: 'Number of successful tests'
+    description: 'Number of passed tests'
   failed:
     description: 'Number of failed tests'
+  skipped:
+    description: 'Number of skipped tests'
+  duration:
+    description: 'Duration of the test run in milliseconds'
+  exit-code:
+    description: 'Exit code of flutter test'
+  machine-path:
+    description: 'Path of the saved `flutter test --machine` output'
   coverage:
-    description: 'Overall coverage percentage'
+    description: 'Overall line coverage in percent'
   coverage-hit:
     description: 'Covered lines'
   coverage-found:
-    description: 'Total lines considered for coverage'
+    description: 'Instrumented lines'
+  changed-lines-coverage:
+    description: 'Coverage of the lines changed by the pull request in percent'
+  check-run-url:
+    description: 'URL of the created check run'
 runs:
   using: 'node24'
   main: 'dist/index.js'

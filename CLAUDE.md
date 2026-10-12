@@ -2,11 +2,12 @@
 
 ## 概要
 
-Flutter のテスト結果とカバレッジから GitHub の Check Run と PR コメントを作成する、TypeScript 製の GitHub Action。
+`flutter test --machine` を実行し、その結果とカバレッジから GitHub の Check Run、PR コメント、アノテーション、`GITHUB_STEP_SUMMARY` を作る、TypeScript 製の GitHub Action（v2）。
 
 - エントリポイントは `action.yml` → `dist/index.js`（`node24`）
-- 入力: `machinePath`（`flutter test --machine` の JSON lines）と `coveragePath`（`lcov.info`）。少なくとも一方が必須。他に `title`、`coverageThreshold`（既定値 80）、`token`
-- 出力: Check Run、PR コメント（marker `<!-- flutter-test-action-comment -->` で既存コメントを更新）、`GITHUB_STEP_SUMMARY`、action outputs（`conclusion`、`tests`、`passed`、`failed`、`coverage` など）
+- 既定ではテストを実行する。`machinePath` / `coveragePath` を渡したときは実行せず、そのファイルを報告する
+- 主な入力: `workingDirectory`、`testArgs`、`flutterCommand`、`coverage`、`coverageThreshold` / `changedLinesCoverageThreshold`（空なら報告だけ）、`failOnError`（既定 true）、`title`、`token`
+- PR コメントは `<!-- flutter-test-action:<title> -->` で始まり、同じ title のコメントを更新する
 
 ## コマンド
 
@@ -27,12 +28,17 @@ pnpm vitest run __tests__/parser.test.ts -t "<test name>"
 
 ## アーキテクチャ
 
-- `src/main.ts`: 入力の検証（`coverageThreshold` は 0〜100）、`Parser` と `CoverageParser` の実行、`exportReport` の呼び出し
-- `src/parser.ts`: machine 出力を 1 行ずつ JSON として解釈し、`TestSuite` / group / test を組み立てて `Reporter` に変換する
-- `src/coverage.ts`: `lcov-parse` の結果を `Coverage` に変換し、閾値と比べて `Reporter` に変換する
-- `src/formatter.ts` の `exportReport`: テストとカバレッジの `Reporter` を結合し、65535 文字・アノテーション 50 件の上限で切り詰める。その後 outputs と step summary を書き、`token` がある場合は PR コメントの作成・更新と `checks.create` を行う
-- `src/model/`: `*FromJSON` 関数で変換するモデル群と、共通の結果型 `Reporter`
-- テストは `__tests__/`、フィクスチャは `__tests__/data/`
+解析と描画を分けている。
+
+- `src/main.ts`: 入力の検証 → `runFlutterTest` → 解析 → PR の変更行の取得 → `buildReport` → outputs、step summary、Check Run、コメント → `setFailed`
+- `src/runner.ts`: `@actions/exec` で `flutter test --machine` を実行し、JSON の行だけをファイルに書き出す。子プロセスの env から `INPUT_*` と runner の資格情報を除く
+- `src/parser.ts`: machine 出力を `TestRun`（`src/model/test-run.ts`）に変換する。state は `testDone` だけで決め、error / print はテストごとに蓄積する。`loading ...` の失敗は suite の `loadErrors` になる
+- `src/coverage.ts`: `lcov-parse` の結果を `CoverageData`（行ごとのヒット数を含む）に変換する
+- `src/diff.ts`: PR の patch から追加行を求め、lcov と突き合わせて変更行カバレッジを計算する
+- `src/paths.ts`: `file://` や絶対パス、lcov の相対パスを repo からの相対パスに変換する（`GITHUB_WORKSPACE` 基準）
+- `src/report/`: `build.ts` で集計し、`markdown.ts` でコメント / Check Run / step summary を、`annotations.ts` でアノテーションを作る。文字数の上限（`outputLimit`）を超える節は優先度の低い順に落とす
+- `src/github.ts`: Check Run の作成（アノテーションは 50 件ずつ `checks.update`）、コメントの upsert、PR の変更ファイルの取得
+- テストは `__tests__/`、フィクスチャは `__tests__/data/`。描画結果は `__tests__/__snapshots__/*.md` のスナップショットで確認する（更新は `pnpm vitest run -u`）
 
 ## 注意点
 
@@ -41,4 +47,4 @@ pnpm vitest run __tests__/parser.test.ts -t "<test name>"
 - `lcov-parse` は `require` で読み込んでいる
 - lefthook により、pre-commit で oxfmt と oxlint、pre-push で `pnpm test` が実行される
 - `.github/workflows/` の変更は actionlint と zizmor（`workflow-quality.yml`）でチェックされる
-- CI の `test` ジョブは `uses: ./` で、`__tests__/data/` のフィクスチャを入力にして action 自体を実行する
+- CI の `test` ジョブは `uses: ./` で action 自体を実行する。Flutter SDK は使わず、`flutterCommand: bash __tests__/data/fake-flutter.sh` でフィクスチャを machine 出力として流す
