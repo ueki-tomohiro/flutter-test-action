@@ -33,16 +33,16 @@
   "dependencies": {
     "@actions/core": "^3.0.0",
     "@actions/exec": "^3.0.0",
-    "@actions/github": "^9.0.0",
+    "@actions/github": "^9.1.0",
     "lcov-parse": "^1.0.0"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
+    "@types/node": "^25.5.2",
     "@vercel/ncc": "^0.38.4",
     "globals": "^17.4.0",
-    "lefthook": "^2.1.4",
+    "lefthook": "^2.1.5",
     "oxfmt": "^0.72.0",
-    "oxlint": "^1.57.0",
+    "oxlint": "^1.59.0",
     "oxlint-tsgolint": "^0.20.0",
     "typescript": "^6.0.2",
     "vite": "^8.3.4",

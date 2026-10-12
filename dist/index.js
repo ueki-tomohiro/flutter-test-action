@@ -517,7 +517,7 @@ async function run() {
             ? await (0, coverage_1.parseLcovFile)(coveragePath)
             : undefined;
         // The context gives the links in the report even without a token.
-        const github = await Promise.all(/* import() */[__nccwpck_require__.e(894), __nccwpck_require__.e(573)]).then(__nccwpck_require__.bind(__nccwpck_require__, 2573));
+        const github = await Promise.all(/* import() */[__nccwpck_require__.e(894), __nccwpck_require__.e(697)]).then(__nccwpck_require__.bind(__nccwpck_require__, 4697));
         const context = (0, github_1.readContext)(github);
         const octokit = inputs.token ? github.getOctokit(inputs.token) : undefined;
         let changedLines;
