@@ -1,4 +1,4 @@
-import {createWriteStream, existsSync} from 'fs'
+import {createWriteStream, statSync} from 'fs'
 import {once} from 'events'
 import path from 'path'
 
@@ -61,6 +61,7 @@ export async function runFlutterTest(options: RunOptions): Promise<RunResult> {
   const stderrTail: string[] = []
 
   core.info(`Running: ${commandLine} (in ${cwd})`)
+  const startedAt = Date.now()
 
   let exitCode: number
   try {
@@ -94,7 +95,9 @@ export async function runFlutterTest(options: RunOptions): Promise<RunResult> {
   let coveragePath: string | undefined
   if (options.coverage) {
     const lcov = path.join(cwd, 'coverage', 'lcov.info')
-    if (existsSync(lcov)) {
+    // A file left by an earlier run must not be reported as this run's
+    // coverage, for example when flutter test fails before running tests.
+    if (modifiedSince(lcov, startedAt)) {
       coveragePath = lcov
     } else {
       core.warning(`Coverage was enabled, but ${lcov} was not created.`)
@@ -102,6 +105,15 @@ export async function runFlutterTest(options: RunOptions): Promise<RunResult> {
   }
 
   return {exitCode, machinePath: options.outputPath, coveragePath, stderrTail}
+}
+
+function modifiedSince(file: string, time: number): boolean {
+  try {
+    // Allow for file systems that store modification times in whole seconds.
+    return statSync(file).mtimeMs >= Math.floor(time / 1000) * 1000
+  } catch {
+    return false
+  }
 }
 
 function isJsonLine(line: string): boolean {

@@ -15,6 +15,12 @@ describe('formatDuration', () => {
     expect(formatDuration(12345)).toBe('12.3 s')
     expect(formatDuration(151000)).toBe('2m 31s')
   })
+
+  test('rounds before choosing the unit', () => {
+    expect(formatDuration(999.6)).toBe('1.0 s')
+    expect(formatDuration(59960)).toBe('1m 0s')
+    expect(formatDuration(119600)).toBe('2m 0s')
+  })
 })
 
 describe('escapeMarkdown', () => {

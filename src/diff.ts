@@ -99,6 +99,7 @@ export function computeChangedLinesCoverage(
       .sort((a, b) => a - b)
     if (instrumented.length === 0) continue
 
+    const allInstrumented = [...fileCoverage.lineHits.keys()]
     let covered = 0
     const uncovered: LineRange[] = []
     let current: LineRange | undefined
@@ -108,10 +109,15 @@ export function computeChangedLinesCoverage(
         current = undefined
         continue
       }
-      // Uncovered lines stay in one range until a covered line appears, so
-      // blank lines and comments between them do not split the range.
-      if (current) {
-        current.end = line
+      // Blank lines and comments between uncovered changed lines do not
+      // split the range, but any other instrumented line does, because it
+      // was not changed by the pull request.
+      const previous = current
+      if (
+        previous &&
+        !allInstrumented.some(other => other > previous.end && other < line)
+      ) {
+        previous.end = line
       } else {
         current = {start: line, end: line}
         uncovered.push(current)

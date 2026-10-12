@@ -8,12 +8,15 @@ export interface RepositoryLinks {
 }
 
 export function formatDuration(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)} ms`
-  const seconds = ms / 1000
-  if (seconds < 60) return `${seconds.toFixed(1)} s`
+  // Round to the precision of each unit before choosing the unit, so that
+  // 999.6 ms is "1.0 s" and 119.6 s is "2m 0s".
+  const milliseconds = Math.round(ms)
+  if (milliseconds < 1000) return `${milliseconds} ms`
+  const tenths = Math.round(ms / 100)
+  if (tenths < 600) return `${(tenths / 10).toFixed(1)} s`
+  const seconds = Math.round(ms / 1000)
   const minutes = Math.floor(seconds / 60)
-  const rest = Math.round(seconds - minutes * 60)
-  return `${minutes}m ${rest}s`
+  return `${minutes}m ${seconds - minutes * 60}s`
 }
 
 export function formatNumber(value: number): string {

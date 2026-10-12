@@ -140,14 +140,22 @@ export async function run(): Promise<void> {
     const octokit = inputs.token ? github.getOctokit(inputs.token) : undefined
 
     let changedLines: ChangedLinesCoverage | undefined
-    if (octokit && context.pullNumber && coverage) {
-      try {
-        const files = await fetchChangedFiles(octokit, context)
-        changedLines = computeChangedLinesCoverage(files, coverage, paths)
-      } catch (error) {
-        core.warning(
-          `Could not read the changed files of the pull request: ${(error as Error).message}`
-        )
+    let changedLinesUnavailable: string | undefined
+    if (context.pullNumber) {
+      if (!coverage) {
+        changedLinesUnavailable = 'no coverage was reported.'
+      } else if (!octokit) {
+        changedLinesUnavailable = 'no token was provided.'
+      } else {
+        try {
+          const files = await fetchChangedFiles(octokit, context)
+          changedLines = computeChangedLinesCoverage(files, coverage, paths)
+        } catch (error) {
+          changedLinesUnavailable = `the changed files could not be read (${(error as Error).message}).`
+          core.warning(
+            `Could not read the changed files of the pull request: ${(error as Error).message}`
+          )
+        }
       }
     }
 
@@ -160,6 +168,7 @@ export async function run(): Promise<void> {
       stderrTail,
       coverageThreshold: inputs.coverageThreshold,
       changedLinesCoverageThreshold: inputs.changedLinesCoverageThreshold,
+      changedLinesUnavailable,
       paths,
       links: context.links
     })

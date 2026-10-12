@@ -83,6 +83,54 @@ describe('buildReport', () => {
     expect(report.problems[0]).toMatch(/exited with code 1/)
   })
 
+  test('fails when the runner reports a failed run without failed tests', () => {
+    const {run} = parseMachineOutput(
+      [
+        '{"suite":{"id":0,"platform":"vm","path":"/a_test.dart"},"type":"suite","time":0}',
+        '{"group":{"id":1,"suiteID":0,"parentID":null,"name":""},"type":"group","time":1}',
+        '{"test":{"id":2,"name":"a","suiteID":0,"groupIDs":[1],"metadata":{"skip":false},"line":3,"url":"file:///a_test.dart"},"type":"testStart","time":2}',
+        '{"testID":2,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":3}',
+        '{"success":false,"type":"done","time":5}'
+      ].join('\n')
+    )
+    const report = buildReport({title: 'T', run, paths})
+
+    expect(report.conclusion).toBe('failure')
+    expect(report.problems[0]).toMatch(/reported a failed run/)
+  })
+
+  test('fails when a threshold is set but its data is missing', () => {
+    const {run} = parseMachineOutput(
+      '{"suite":{"id":0,"platform":"vm","path":"/a_test.dart"},"type":"suite","time":0}\n' +
+        '{"group":{"id":1,"suiteID":0,"parentID":null,"name":""},"type":"group","time":1}\n' +
+        '{"test":{"id":2,"name":"a","suiteID":0,"groupIDs":[1],"metadata":{"skip":false},"line":3,"url":"file:///a_test.dart"},"type":"testStart","time":2}\n' +
+        '{"testID":2,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":3}\n' +
+        '{"success":true,"type":"done","time":5}'
+    )
+
+    expect(
+      buildReport({title: 'T', run, coverageThreshold: 80, paths}).problems
+    ).toEqual([
+      'A coverage threshold is set, but no coverage was reported. Enable `coverage` or pass `coveragePath`.'
+    ])
+    expect(
+      buildReport({
+        title: 'T',
+        run,
+        changedLinesCoverageThreshold: 80,
+        changedLinesUnavailable: 'no token was provided.',
+        paths
+      }).problems
+    ).toEqual([
+      'A threshold for changed lines is set, but their coverage could not be computed: no token was provided.'
+    ])
+    // Outside of pull requests there are no changed lines to check.
+    expect(
+      buildReport({title: 'T', run, changedLinesCoverageThreshold: 80, paths})
+        .conclusion
+    ).toBe('success')
+  })
+
   test('applies coverage thresholds only when they are set', async () => {
     const input = await failingInput()
     const passing = {...input, run: undefined, exitCode: undefined}

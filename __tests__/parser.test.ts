@@ -114,6 +114,23 @@ describe('parseMachineOutput edge cases', () => {
     expect(run.success).toBeUndefined()
   })
 
+  test('fails a test that reports an error after testDone', () => {
+    const {run} = parseMachineOutput(
+      [
+        '{"suite":{"id":0,"platform":"vm","path":"/a_test.dart"},"type":"suite","time":0}',
+        '{"group":{"id":1,"suiteID":0,"parentID":null,"name":""},"type":"group","time":1}',
+        '{"test":{"id":2,"name":"leaks","suiteID":0,"groupIDs":[1],"metadata":{"skip":false},"line":3,"url":"file:///a_test.dart"},"type":"testStart","time":2}',
+        '{"testID":2,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":3}',
+        '{"testID":2,"error":"This test failed after it had already completed.","stackTrace":"","isFailure":false,"type":"error","time":4}',
+        '{"success":false,"type":"done","time":5}'
+      ].join('\n')
+    )
+
+    const [test] = run.suites[0].tests
+    expect(test.status).toBe('failure')
+    expect(test.errors[0].message).toMatch(/after it had already completed/)
+  })
+
   test('reports failed setUpAll as a failure', () => {
     const {run} = parseMachineOutput(
       [

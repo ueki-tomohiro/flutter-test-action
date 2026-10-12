@@ -1,5 +1,11 @@
 import {afterEach, beforeEach, describe, expect, test, vi} from 'vitest'
-import {mkdtempSync, readFileSync} from 'fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  utimesSync,
+  writeFileSync
+} from 'fs'
 import os from 'os'
 import path from 'path'
 import {buildCommandLine, testEnvironment} from '../src/runner'
@@ -90,5 +96,46 @@ describe('runFlutterTest', () => {
     expect(warning).toHaveBeenCalledWith(
       expect.stringContaining('coverage/lcov.info was not created')
     )
+  })
+
+  test('ignores coverage left by an earlier run', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'runner-test-'))
+    const lcov = path.join(dir, 'coverage', 'lcov.info')
+    mkdirSync(path.dirname(lcov))
+    writeFileSync(lcov, 'SF:lib/a.dart\nend_of_record\n')
+    utimesSync(lcov, new Date(2020, 0, 1), new Date(2020, 0, 1))
+    exec.mockResolvedValue(1)
+
+    const {runFlutterTest} = await import('../src/runner')
+    const result = await runFlutterTest({
+      flutterCommand: 'flutter',
+      workingDirectory: dir,
+      testArgs: '',
+      coverage: true,
+      outputPath: path.join(dir, 'machine.json')
+    })
+
+    expect(result.coveragePath).toBeUndefined()
+  })
+
+  test('uses coverage written by this run', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'runner-test-'))
+    const lcov = path.join(dir, 'coverage', 'lcov.info')
+    exec.mockImplementation(async () => {
+      mkdirSync(path.dirname(lcov))
+      writeFileSync(lcov, 'SF:lib/a.dart\nend_of_record\n')
+      return 0
+    })
+
+    const {runFlutterTest} = await import('../src/runner')
+    const result = await runFlutterTest({
+      flutterCommand: 'flutter',
+      workingDirectory: dir,
+      testArgs: '',
+      coverage: true,
+      outputPath: path.join(dir, 'machine.json')
+    })
+
+    expect(result.coveragePath).toBe(lcov)
   })
 })

@@ -266,6 +266,7 @@ function computeChangedLinesCoverage(changedFiles, coverage, context) {
             .sort((a, b) => a - b);
         if (instrumented.length === 0)
             continue;
+        const allInstrumented = [...fileCoverage.lineHits.keys()];
         let covered = 0;
         const uncovered = [];
         let current;
@@ -275,10 +276,13 @@ function computeChangedLinesCoverage(changedFiles, coverage, context) {
                 current = undefined;
                 continue;
             }
-            // Uncovered lines stay in one range until a covered line appears, so
-            // blank lines and comments between them do not split the range.
-            if (current) {
-                current.end = line;
+            // Blank lines and comments between uncovered changed lines do not
+            // split the range, but any other instrumented line does, because it
+            // was not changed by the pull request.
+            const previous = current;
+            if (previous &&
+                !allInstrumented.some(other => other > previous.end && other < line)) {
+                previous.end = line;
             }
             else {
                 current = { start: line, end: line };
@@ -521,13 +525,23 @@ async function run() {
         const context = (0, github_1.readContext)(github);
         const octokit = inputs.token ? github.getOctokit(inputs.token) : undefined;
         let changedLines;
-        if (octokit && context.pullNumber && coverage) {
-            try {
-                const files = await (0, github_1.fetchChangedFiles)(octokit, context);
-                changedLines = (0, diff_1.computeChangedLinesCoverage)(files, coverage, paths);
+        let changedLinesUnavailable;
+        if (context.pullNumber) {
+            if (!coverage) {
+                changedLinesUnavailable = 'no coverage was reported.';
             }
-            catch (error) {
-                core.warning(`Could not read the changed files of the pull request: ${error.message}`);
+            else if (!octokit) {
+                changedLinesUnavailable = 'no token was provided.';
+            }
+            else {
+                try {
+                    const files = await (0, github_1.fetchChangedFiles)(octokit, context);
+                    changedLines = (0, diff_1.computeChangedLinesCoverage)(files, coverage, paths);
+                }
+                catch (error) {
+                    changedLinesUnavailable = `the changed files could not be read (${error.message}).`;
+                    core.warning(`Could not read the changed files of the pull request: ${error.message}`);
+                }
             }
         }
         const report = (0, build_1.buildReport)({
@@ -539,6 +553,7 @@ async function run() {
             stderrTail,
             coverageThreshold: inputs.coverageThreshold,
             changedLinesCoverageThreshold: inputs.changedLinesCoverageThreshold,
+            changedLinesUnavailable,
             paths,
             links: context.links
         });
@@ -754,16 +769,22 @@ function parseMachineOutput(content) {
                     skipReason: test['metadata']?.['skipReason'] ?? undefined,
                     startTime: event['time'] ?? 0,
                     errors: [],
-                    prints: []
+                    prints: [],
+                    failedAfterDone: false
                 });
                 break;
             }
             case 'error': {
-                tests.get(event['testID'])?.errors.push({
-                    message: event['error'] ?? '',
-                    stackTrace: event['stackTrace'] ?? '',
-                    isFailure: event['isFailure'] === true
-                });
+                const test = tests.get(event['testID']);
+                if (test) {
+                    test.errors.push({
+                        message: event['error'] ?? '',
+                        stackTrace: event['stackTrace'] ?? '',
+                        isFailure: event['isFailure'] === true
+                    });
+                    if (test.done)
+                        test.failedAfterDone = true;
+                }
                 break;
             }
             case 'print': {
@@ -811,7 +832,7 @@ function parseMachineOutput(content) {
 function toStatus(test) {
     if (!test.done)
         return 'failure';
-    if (test.done.result !== 'success')
+    if (test.done.result !== 'success' || test.failedAfterDone)
         return 'failure';
     return test.done.skipped ? 'skipped' : 'success';
 }
@@ -1010,9 +1031,20 @@ function buildReport(input) {
         else if (tests.total === 0 && !hasFailures) {
             problems.push('No tests were found.');
         }
+        else if (input.run?.success === false && !hasFailures) {
+            problems.push('The test runner reported a failed run, but no failed test was found in its output.');
+        }
         else if (input.run?.success === undefined && !hasFailures) {
             problems.push('The test output ended before the run finished. The test process may have been interrupted.');
         }
+    }
+    if (input.coverageThreshold !== undefined && !coverage) {
+        problems.push('A coverage threshold is set, but no coverage was reported. Enable `coverage` or pass `coveragePath`.');
+    }
+    if (input.changedLinesCoverageThreshold !== undefined &&
+        !changedLines &&
+        input.changedLinesUnavailable) {
+        problems.push(`A threshold for changed lines is set, but their coverage could not be computed: ${input.changedLinesUnavailable}`);
     }
     if (coverage && !coverage.passed) {
         problems.push(`Coverage ${(0, format_1.formatPercent)(coverage.lines.percent)} is below the threshold of ${coverage.threshold}%.`);
@@ -1181,14 +1213,17 @@ exports.cleanErrorMessage = cleanErrorMessage;
 exports.blobUrl = blobUrl;
 exports.commitUrl = commitUrl;
 function formatDuration(ms) {
-    if (ms < 1000)
-        return `${Math.round(ms)} ms`;
-    const seconds = ms / 1000;
-    if (seconds < 60)
-        return `${seconds.toFixed(1)} s`;
+    // Round to the precision of each unit before choosing the unit, so that
+    // 999.6 ms is "1.0 s" and 119.6 s is "2m 0s".
+    const milliseconds = Math.round(ms);
+    if (milliseconds < 1000)
+        return `${milliseconds} ms`;
+    const tenths = Math.round(ms / 100);
+    if (tenths < 600)
+        return `${(tenths / 10).toFixed(1)} s`;
+    const seconds = Math.round(ms / 1000);
     const minutes = Math.floor(seconds / 60);
-    const rest = Math.round(seconds - minutes * 60);
-    return `${minutes}m ${rest}s`;
+    return `${minutes}m ${seconds - minutes * 60}s`;
 }
 function formatNumber(value) {
     return value.toLocaleString('en-US');
@@ -1876,6 +1911,7 @@ async function runFlutterTest(options) {
     const output = (0, fs_1.createWriteStream)(options.outputPath, { encoding: 'utf8' });
     const stderrTail = [];
     core.info(`Running: ${commandLine} (in ${cwd})`);
+    const startedAt = Date.now();
     let exitCode;
     try {
         exitCode = await exec(commandLine, [], {
@@ -1910,7 +1946,9 @@ async function runFlutterTest(options) {
     let coveragePath;
     if (options.coverage) {
         const lcov = path_1.default.join(cwd, 'coverage', 'lcov.info');
-        if ((0, fs_1.existsSync)(lcov)) {
+        // A file left by an earlier run must not be reported as this run's
+        // coverage, for example when flutter test fails before running tests.
+        if (modifiedSince(lcov, startedAt)) {
             coveragePath = lcov;
         }
         else {
@@ -1918,6 +1956,15 @@ async function runFlutterTest(options) {
         }
     }
     return { exitCode, machinePath: options.outputPath, coveragePath, stderrTail };
+}
+function modifiedSince(file, time) {
+    try {
+        // Allow for file systems that store modification times in whole seconds.
+        return (0, fs_1.statSync)(file).mtimeMs >= Math.floor(time / 1000) * 1000;
+    }
+    catch {
+        return false;
+    }
 }
 function isJsonLine(line) {
     const trimmed = line.trim();

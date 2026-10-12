@@ -49,6 +49,39 @@ describe('toRepoPath', () => {
 })
 
 describe('computeChangedLinesCoverage', () => {
+  test('splits uncovered ranges at unchanged instrumented lines', () => {
+    const context = createPathContext('.', '/workspace/repo')
+    const coverage = {
+      files: [
+        {
+          path: 'lib/a.dart',
+          lineHits: new Map([
+            [5, 0],
+            [50, 0],
+            [100, 0]
+          ]),
+          lines: {hit: 0, found: 3},
+          functions: {hit: 0, found: 0},
+          branches: {hit: 0, found: 0}
+        }
+      ],
+      lines: {hit: 0, found: 3},
+      functions: {hit: 0, found: 0},
+      branches: {hit: 0, found: 0}
+    }
+
+    const result = computeChangedLinesCoverage(
+      [{path: 'lib/a.dart', addedLines: [5, 6, 100]}],
+      coverage,
+      context
+    )
+
+    expect(result.files[0].uncovered).toEqual([
+      {start: 5, end: 5},
+      {start: 100, end: 100}
+    ])
+  })
+
   test('counts instrumented changed lines and groups uncovered ranges', async () => {
     const coverage = await parseLcovFile('__tests__/data/lcov_changed.info')
     const context = createPathContext('packages/app', '/workspace/repo')

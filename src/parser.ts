@@ -16,6 +16,9 @@ interface PendingTest {
   startTime: number
   errors: TestError[]
   prints: string[]
+  // An error reported after testDone, such as "This test failed after it had
+  // already completed". testDone still says success in that case.
+  failedAfterDone: boolean
   done?: {result: string; skipped: boolean; hidden: boolean; time: number}
 }
 
@@ -88,16 +91,21 @@ export function parseMachineOutput(content: string): ParseResult {
           skipReason: test['metadata']?.['skipReason'] ?? undefined,
           startTime: event['time'] ?? 0,
           errors: [],
-          prints: []
+          prints: [],
+          failedAfterDone: false
         })
         break
       }
       case 'error': {
-        tests.get(event['testID'])?.errors.push({
-          message: event['error'] ?? '',
-          stackTrace: event['stackTrace'] ?? '',
-          isFailure: event['isFailure'] === true
-        })
+        const test = tests.get(event['testID'])
+        if (test) {
+          test.errors.push({
+            message: event['error'] ?? '',
+            stackTrace: event['stackTrace'] ?? '',
+            isFailure: event['isFailure'] === true
+          })
+          if (test.done) test.failedAfterDone = true
+        }
         break
       }
       case 'print': {
@@ -148,7 +156,7 @@ export function parseMachineOutput(content: string): ParseResult {
 
 function toStatus(test: PendingTest): TestCase['status'] {
   if (!test.done) return 'failure'
-  if (test.done.result !== 'success') return 'failure'
+  if (test.done.result !== 'success' || test.failedAfterDone) return 'failure'
   return test.done.skipped ? 'skipped' : 'success'
 }
 

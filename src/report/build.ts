@@ -16,6 +16,9 @@ export interface ReportInput {
   stderrTail?: string[]
   coverageThreshold?: number
   changedLinesCoverageThreshold?: number
+  // Why the coverage of changed lines could not be computed for a pull
+  // request, if it could not.
+  changedLinesUnavailable?: string
   paths: PathContext
   links?: RepositoryLinks
 }
@@ -119,11 +122,29 @@ export function buildReport(input: ReportInput): Report {
       )
     } else if (tests.total === 0 && !hasFailures) {
       problems.push('No tests were found.')
+    } else if (input.run?.success === false && !hasFailures) {
+      problems.push(
+        'The test runner reported a failed run, but no failed test was found in its output.'
+      )
     } else if (input.run?.success === undefined && !hasFailures) {
       problems.push(
         'The test output ended before the run finished. The test process may have been interrupted.'
       )
     }
+  }
+  if (input.coverageThreshold !== undefined && !coverage) {
+    problems.push(
+      'A coverage threshold is set, but no coverage was reported. Enable `coverage` or pass `coveragePath`.'
+    )
+  }
+  if (
+    input.changedLinesCoverageThreshold !== undefined &&
+    !changedLines &&
+    input.changedLinesUnavailable
+  ) {
+    problems.push(
+      `A threshold for changed lines is set, but their coverage could not be computed: ${input.changedLinesUnavailable}`
+    )
   }
   if (coverage && !coverage.passed) {
     problems.push(
