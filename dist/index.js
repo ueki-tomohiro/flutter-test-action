@@ -703,7 +703,7 @@ function escapeEmoji(input) {
 const exportReport = async ({ report, coverage }) => {
     const [core, github] = await Promise.all([
         Promise.all(/* import() */[__nccwpck_require__.e(662), __nccwpck_require__.e(623)]).then(__nccwpck_require__.bind(__nccwpck_require__, 7623)),
-        Promise.all(/* import() */[__nccwpck_require__.e(662), __nccwpck_require__.e(573)]).then(__nccwpck_require__.bind(__nccwpck_require__, 2573))
+        Promise.all(/* import() */[__nccwpck_require__.e(662), __nccwpck_require__.e(68)]).then(__nccwpck_require__.bind(__nccwpck_require__, 1068))
     ]);
     const token = core.getInput('token');
     const conclusion = combineConclusion(report, coverage);
