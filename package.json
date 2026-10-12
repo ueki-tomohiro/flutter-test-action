@@ -14,7 +14,7 @@
     "format": "oxfmt --write \"**/*.{ts,mjs}\"",
     "format-check": "oxfmt --check \"**/*.{ts,mjs}\"",
     "prepare": "lefthook install",
-    "lint": "oxlint --type-aware src/**/*.ts",
+    "lint": "oxlint --type-aware src",
     "package": "rm -rf dist && ncc build src/main.ts --out dist --source-map --license licenses.txt",
     "test": "vitest run",
     "all": "pnpm build && pnpm format && pnpm lint && pnpm package && pnpm test"
@@ -32,9 +32,9 @@
   "license": "MIT",
   "dependencies": {
     "@actions/core": "^3.0.0",
+    "@actions/exec": "^3.0.0",
     "@actions/github": "^9.0.0",
-    "lcov-parse": "^1.0.0",
-    "xml-formatter": "^3.7.0"
+    "lcov-parse": "^1.0.0"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

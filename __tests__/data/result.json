@@ -21,3 +21,6 @@
 {"test":{"id":10,"name":"Counter increments smoke test","suiteID":2,"groupIDs":[9],"metadata":{"skip":false,"skipReason":null},"line":159,"column":5,"url":"package:flutter_test/src/widget_tester.dart","root_line":14,"root_column":3,"root_url":"file:///ci_test/test/widget_test.dart"},"type":"testStart","time":2895}
 
 [{"event":"test.startedProcess","params":{"observatoryUri":null}}]
+{"testID":10,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":3102}
+{"testID":8,"result":"success","skipped":false,"hidden":true,"type":"testDone","time":3110}
+{"success":true,"type":"done","time":3120}

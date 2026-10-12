@@ -1,21 +1,39 @@
 import {describe, expect, test} from 'vitest'
-import {CoverageParser} from '../src/coverage'
+import {parseLcovFile, percentage} from '../src/coverage'
 
-describe('Coverage', () => {
-  test('parse json', async () => {
-    const parser = new CoverageParser('__tests__/data/lcov.info')
-    await parser.parseObject()
-    expect(parser.results?.length).toBe(5)
+describe('parseLcovFile', () => {
+  test('reads each file and the totals', async () => {
+    const coverage = await parseLcovFile('__tests__/data/lcov.info')
+
+    expect(coverage.files).toHaveLength(5)
+    expect(coverage.files[0].path).toBe('lib/util/date_util.dart')
+    expect(coverage.lines.found).toBe(
+      coverage.files.reduce((sum, f) => sum + f.lines.found, 0)
+    )
   })
 
-  test('applies configurable threshold and outputs', async () => {
-    const parser = new CoverageParser('__tests__/data/lcov.info')
-    await parser.parseObject()
-    const report = parser.toReport(90)
+  test('keeps the hit count of each line', async () => {
+    const coverage = await parseLcovFile('__tests__/data/lcov.info')
+    const file = coverage.files[0]
 
-    expect(report.status).toBe('failure')
-    expect(report.outputs['coverage']).toBeDefined()
-    expect(report.outputs['coverage-hit']).toBeDefined()
-    expect(report.outputs['coverage-found']).toBeDefined()
+    expect(file.lineHits.get(5)).toBe(3)
+    expect(file.lineHits.get(17)).toBe(0)
+  })
+
+  test('fails when the file does not exist', async () => {
+    await expect(parseLcovFile('__tests__/data/missing.info')).rejects.toThrow(
+      /missing\.info/
+    )
+  })
+})
+
+describe('percentage', () => {
+  test('rounds down to one decimal place', () => {
+    expect(percentage({hit: 2, found: 3})).toBe(66.6)
+    expect(percentage({hit: 7999, found: 10000})).toBe(79.9)
+  })
+
+  test('returns undefined when nothing was found', () => {
+    expect(percentage({hit: 0, found: 0})).toBeUndefined()
   })
 })

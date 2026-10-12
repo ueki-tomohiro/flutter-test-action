@@ -33,7 +33,39 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v6
+      # Report existing files without running flutter test.
       - uses: ./
         with:
+          title: 'Report only'
           machinePath: __tests__/data/result.json
           coveragePath: __tests__/data/lcov.info
+      # Run the tests through a fake flutter command, so no Flutter SDK is needed.
+      - uses: ./
+        with:
+          title: 'Run (passing)'
+          flutterCommand: bash __tests__/data/fake-flutter.sh
+          coverage: true
+        env:
+          FAKE_FLUTTER_OUTPUT: __tests__/data/result.json
+          FAKE_FLUTTER_LCOV: __tests__/data/lcov.info
+      - id: failing
+        uses: ./
+        with:
+          title: 'Run (failing)'
+          flutterCommand: bash __tests__/data/fake-flutter.sh
+          failOnError: false
+          # Without a token, the expected failure does not show up as a failed
+          # check or comment on the pull request.
+          token: ''
+        env:
+          FAKE_FLUTTER_OUTPUT: __tests__/data/result_failure.json
+          FAKE_FLUTTER_EXIT_CODE: '1'
+      - name: Check the outputs of the failing run
+        env:
+          CONCLUSION: ${{ steps.failing.outputs.conclusion }}
+          FAILED: ${{ steps.failing.outputs.failed }}
+          EXIT_CODE: ${{ steps.failing.outputs.exit-code }}
+        run: |
+          test "$CONCLUSION" = failure
+          test "$FAILED" = 2
+          test "$EXIT_CODE" = 1

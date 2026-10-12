@@ -134,8 +134,295 @@ module.exports.source = walkFile;
 
 /***/ }),
 
-/***/ 5313:
-/***/ (function(module, exports, __nccwpck_require__) {
+/***/ 7474:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.parseLcovFile = parseLcovFile;
+exports.toCoverageData = toCoverageData;
+exports.percentage = percentage;
+// eslint-disable-next-line import/no-commonjs, @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+const parse = __nccwpck_require__(2596);
+/* eslint-disable @typescript-eslint/no-explicit-any */
+async function parseLcovFile(path) {
+    const records = await new Promise((resolve, reject) => {
+        parse(path, (error, info) => {
+            if (error) {
+                reject(new Error(`Failed to parse coverage file ${path}: ${String(error)}`));
+                return;
+            }
+            resolve(info);
+        });
+    });
+    return toCoverageData(records);
+}
+function toCoverageData(records) {
+    const files = records.filter(Boolean).map(toFileCoverage);
+    return {
+        files,
+        lines: sum(files.map(f => f.lines)),
+        functions: sum(files.map(f => f.functions)),
+        branches: sum(files.map(f => f.branches))
+    };
+}
+function percentage({ hit, found }) {
+    if (found === 0)
+        return undefined;
+    return Math.floor((hit / found) * 1000) / 10;
+}
+function toFileCoverage(record) {
+    const lineHits = new Map();
+    for (const detail of record['lines']?.['details'] ?? []) {
+        const line = Number(detail['line']);
+        lineHits.set(line, (lineHits.get(line) ?? 0) + Number(detail['hit'] ?? 0));
+    }
+    return {
+        path: record['file'],
+        lineHits,
+        lines: toCount(record['lines']),
+        functions: toCount(record['functions']),
+        branches: toCount(record['branches'])
+    };
+}
+function toCount(json) {
+    return { hit: Number(json?.['hit'] ?? 0), found: Number(json?.['found'] ?? 0) };
+}
+function sum(counts) {
+    return counts.reduce((total, count) => ({
+        hit: total.hit + count.hit,
+        found: total.found + count.found
+    }), { hit: 0, found: 0 });
+}
+
+
+/***/ }),
+
+/***/ 2371:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.parseAddedLines = parseAddedLines;
+exports.computeChangedLinesCoverage = computeChangedLinesCoverage;
+const paths_1 = __nccwpck_require__(5782);
+/**
+ * Returns the line numbers added by a unified diff patch, as returned by the
+ * GitHub pull request files API.
+ */
+function parseAddedLines(patch) {
+    const added = [];
+    let newLine = 0;
+    for (const line of patch.split('\n')) {
+        const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/u.exec(line);
+        if (hunk) {
+            newLine = Number(hunk[1]);
+            continue;
+        }
+        if (newLine === 0)
+            continue;
+        if (line.startsWith('+')) {
+            added.push(newLine);
+            newLine++;
+        }
+        else if (line.startsWith('-') || line.startsWith('\\')) {
+            // Removed lines and "\ No newline at end of file" do not exist in the
+            // new file.
+        }
+        else {
+            newLine++;
+        }
+    }
+    return added;
+}
+function computeChangedLinesCoverage(changedFiles, coverage, context) {
+    const coverageByPath = new Map(coverage.files.flatMap(file => {
+        const repoPath = (0, paths_1.toRepoPath)(file.path, context);
+        return repoPath ? [[repoPath, file]] : [];
+    }));
+    const libPrefix = context.workingDirectory
+        ? `${context.workingDirectory}/lib/`
+        : 'lib/';
+    const result = {
+        files: [],
+        covered: 0,
+        total: 0,
+        missingFiles: []
+    };
+    for (const changed of changedFiles) {
+        const fileCoverage = coverageByPath.get(changed.path);
+        if (!fileCoverage) {
+            if (changed.addedLines.length > 0 &&
+                changed.path.startsWith(libPrefix) &&
+                isHandWrittenDart(changed.path)) {
+                result.missingFiles.push(changed.path);
+            }
+            continue;
+        }
+        const instrumented = [...new Set(changed.addedLines)]
+            .filter(line => fileCoverage.lineHits.has(line))
+            .sort((a, b) => a - b);
+        if (instrumented.length === 0)
+            continue;
+        let covered = 0;
+        const uncovered = [];
+        let current;
+        for (const line of instrumented) {
+            if ((fileCoverage.lineHits.get(line) ?? 0) > 0) {
+                covered++;
+                current = undefined;
+                continue;
+            }
+            // Uncovered lines stay in one range until a covered line appears, so
+            // blank lines and comments between them do not split the range.
+            if (current) {
+                current.end = line;
+            }
+            else {
+                current = { start: line, end: line };
+                uncovered.push(current);
+            }
+        }
+        result.files.push({
+            path: changed.path,
+            covered,
+            total: instrumented.length,
+            uncovered
+        });
+        result.covered += covered;
+        result.total += instrumented.length;
+    }
+    return result;
+}
+function isHandWrittenDart(filePath) {
+    return (filePath.endsWith('.dart') &&
+        !/\.(g|freezed|mocks|gr|config|gen)\.dart$/u.test(filePath));
+}
+
+
+/***/ }),
+
+/***/ 4171:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.readContext = readContext;
+exports.commentMarker = commentMarker;
+exports.fetchChangedFiles = fetchChangedFiles;
+exports.createCheckRun = createCheckRun;
+exports.upsertComment = upsertComment;
+const diff_1 = __nccwpck_require__(2371);
+// GitHub accepts up to 50 annotations per request.
+const annotationsPerRequest = 50;
+function readContext(github) {
+    const { context } = github;
+    const { owner, repo } = context.repo;
+    const pr = context.payload.pull_request;
+    const sha = pr?.head?.sha ?? context.sha;
+    const serverUrl = context.serverUrl || 'https://github.com';
+    return {
+        owner,
+        repo,
+        sha,
+        pullNumber: pr?.number,
+        links: {
+            serverUrl,
+            owner,
+            repo,
+            sha,
+            runUrl: context.runId
+                ? `${serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`
+                : undefined
+        }
+    };
+}
+function commentMarker(title) {
+    return `<!-- flutter-test-action:${title.replace(/-->/gu, '')} -->`;
+}
+async function fetchChangedFiles(octokit, context) {
+    if (!context.pullNumber)
+        return [];
+    const files = await octokit.paginate(octokit.rest.pulls.listFiles, {
+        owner: context.owner,
+        repo: context.repo,
+        pull_number: context.pullNumber,
+        per_page: 100
+    });
+    return files
+        .filter(file => file.status !== 'removed' && file.patch)
+        .map(file => ({
+        path: file.filename,
+        addedLines: (0, diff_1.parseAddedLines)(file.patch ?? '')
+    }));
+}
+async function createCheckRun(octokit, context, { name, conclusion, title, summary, text, annotations }) {
+    const chunks = [];
+    for (let i = 0; i < annotations.length; i += annotationsPerRequest) {
+        chunks.push(annotations.slice(i, i + annotationsPerRequest));
+    }
+    const output = { title, summary, text };
+    const { data } = await octokit.rest.checks.create({
+        owner: context.owner,
+        repo: context.repo,
+        name,
+        head_sha: context.sha,
+        status: 'completed',
+        conclusion,
+        output: { ...output, annotations: chunks[0] ?? [] }
+    });
+    for (const chunk of chunks.slice(1)) {
+        await octokit.rest.checks.update({
+            owner: context.owner,
+            repo: context.repo,
+            check_run_id: data.id,
+            output: { ...output, annotations: chunk }
+        });
+    }
+    return data.html_url ?? undefined;
+}
+/**
+ * Creates the pull request comment for this title, or updates the one created
+ * by a previous run.
+ */
+async function upsertComment(octokit, context, title, body) {
+    if (!context.pullNumber)
+        return 'skipped';
+    const marker = commentMarker(title);
+    const fullBody = `${marker}\n${body}`;
+    const comments = await octokit.paginate(octokit.rest.issues.listComments, {
+        owner: context.owner,
+        repo: context.repo,
+        issue_number: context.pullNumber,
+        per_page: 100
+    });
+    const existing = comments.find(comment => comment.body?.split('\n', 1)[0] === marker);
+    if (existing) {
+        await octokit.rest.issues.updateComment({
+            owner: context.owner,
+            repo: context.repo,
+            comment_id: existing.id,
+            body: fullBody
+        });
+        return 'updated';
+    }
+    await octokit.rest.issues.createComment({
+        owner: context.owner,
+        repo: context.repo,
+        issue_number: context.pullNumber,
+        body: fullBody
+    });
+    return 'created';
+}
+
+
+/***/ }),
+
+/***/ 7353:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
@@ -143,714 +430,941 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-const xml_parser_xo_1 = __importDefault(__nccwpck_require__(8603));
-function newLine(state) {
-    if (!state.options.indentation && !state.options.lineSeparator)
-        return;
-    state.content += state.options.lineSeparator;
-    let i;
-    for (i = 0; i < state.level; i++) {
-        state.content += state.options.indentation;
-    }
-}
-function indent(state) {
-    state.content = state.content.replace(/ +$/, '');
-    let i;
-    for (i = 0; i < state.level; i++) {
-        state.content += state.options.indentation;
-    }
-}
-function appendContent(state, content) {
-    state.content += content;
-}
-function processNode(node, state, preserveSpace) {
-    if (node.type === 'Element') {
-        processElementNode(node, state, preserveSpace);
-    }
-    else if (node.type === 'ProcessingInstruction') {
-        processProcessingIntruction(node, state);
-    }
-    else if (typeof node.content === 'string') {
-        processContent(node.content, state, preserveSpace);
-    }
-    else {
-        throw new Error('Unknown node type: ' + node.type);
-    }
-}
-function processContent(content, state, preserveSpace) {
-    if (!preserveSpace) {
-        const trimmedContent = content.trim();
-        if (state.options.lineSeparator) {
-            content = trimmedContent;
-        }
-        else if (trimmedContent.length === 0) {
-            content = trimmedContent;
-        }
-    }
-    if (content.length > 0) {
-        if (!preserveSpace && state.content.length > 0) {
-            newLine(state);
-        }
-        appendContent(state, content);
-    }
-}
-function isPathMatchingIgnoredPaths(path, ignoredPaths) {
-    const fullPath = '/' + path.join('/');
-    const pathLastPart = path[path.length - 1];
-    return ignoredPaths.includes(pathLastPart) || ignoredPaths.includes(fullPath);
-}
-function processElementNode(node, state, preserveSpace) {
-    state.path.push(node.name);
-    if (!preserveSpace && state.content.length > 0) {
-        newLine(state);
-    }
-    appendContent(state, '<' + node.name);
-    processAttributes(state, node.attributes);
-    if (node.children === null || (state.options.forceSelfClosingEmptyTag && node.children.length === 0)) {
-        const selfClosingNodeClosingTag = state.options.whiteSpaceAtEndOfSelfclosingTag ? ' />' : '/>';
-        // self-closing node
-        appendContent(state, selfClosingNodeClosingTag);
-    }
-    else if (node.children.length === 0) {
-        // empty node
-        appendContent(state, '></' + node.name + '>');
-    }
-    else {
-        const nodeChildren = node.children;
-        appendContent(state, '>');
-        state.level++;
-        let nodePreserveSpace = node.attributes['xml:space'] === 'preserve' || preserveSpace;
-        let ignoredPath = false;
-        if (!nodePreserveSpace && state.options.ignoredPaths) {
-            ignoredPath = isPathMatchingIgnoredPaths(state.path, state.options.ignoredPaths);
-            nodePreserveSpace = ignoredPath;
-        }
-        if (!nodePreserveSpace && state.options.collapseContent) {
-            let containsTextNodes = false;
-            let containsTextNodesWithLineBreaks = false;
-            let containsNonTextNodes = false;
-            nodeChildren.forEach(function (child, index) {
-                if (child.type === 'Text') {
-                    if (child.content.includes('\n')) {
-                        containsTextNodesWithLineBreaks = true;
-                        child.content = child.content.trim();
-                    }
-                    else if ((index === 0 || index === nodeChildren.length - 1) && !preserveSpace) {
-                        if (child.content.trim().length === 0) {
-                            // If the text node is at the start or end and is empty, it should be ignored when formatting
-                            child.content = '';
-                        }
-                    }
-                    // If there is some content or whitespaces have been removed and there is no other siblings
-                    if (child.content.trim().length > 0 || nodeChildren.length === 1) {
-                        containsTextNodes = true;
-                    }
-                }
-                else if (child.type === 'CDATA') {
-                    containsTextNodes = true;
-                }
-                else {
-                    containsNonTextNodes = true;
-                }
-            });
-            if (containsTextNodes && (!containsNonTextNodes || !containsTextNodesWithLineBreaks)) {
-                nodePreserveSpace = true;
-            }
-        }
-        nodeChildren.forEach(function (child) {
-            processNode(child, state, preserveSpace || nodePreserveSpace);
-        });
-        state.level--;
-        if (!preserveSpace && !nodePreserveSpace) {
-            newLine(state);
-        }
-        if (ignoredPath) {
-            indent(state);
-        }
-        appendContent(state, '</' + node.name + '>');
-    }
-    state.path.pop();
-}
-function processAttributes(state, attributes) {
-    Object.keys(attributes).forEach(function (attr) {
-        if (state.options.attributeQuotes === 'single') {
-            const escaped = attributes[attr].replace(/'/g, '&apos;');
-            appendContent(state, ' ' + attr + '=\'' + escaped + '\'');
-        }
-        else {
-            const escaped = attributes[attr].replace(/"/g, '&quot;');
-            appendContent(state, ' ' + attr + '="' + escaped + '"');
-        }
-    });
-}
-function processProcessingIntruction(node, state) {
-    if (state.content.length > 0) {
-        newLine(state);
-    }
-    appendContent(state, '<?' + node.name);
-    appendContent(state, ' ' + node.content.trim());
-    appendContent(state, '?>');
-}
-/**
- * Converts the given XML into human readable format.
- */
-function formatXml(xml, options = {}) {
-    options.indentation = 'indentation' in options ? options.indentation : '    ';
-    options.collapseContent = options.collapseContent === true;
-    options.lineSeparator = 'lineSeparator' in options ? options.lineSeparator : '\r\n';
-    options.whiteSpaceAtEndOfSelfclosingTag = options.whiteSpaceAtEndOfSelfclosingTag === true;
-    options.throwOnFailure = options.throwOnFailure !== false;
-    options.attributeQuotes = 'attributeQuotes' in options ? options.attributeQuotes : 'double';
-    try {
-        const parsedXml = (0, xml_parser_xo_1.default)(xml, { filter: options.filter, strictMode: options.strictMode });
-        const state = { content: '', level: 0, options: options, path: [] };
-        if (parsedXml.declaration) {
-            processProcessingIntruction(parsedXml.declaration, state);
-        }
-        parsedXml.children.forEach(function (child) {
-            processNode(child, state, false);
-        });
-        if (!options.lineSeparator) {
-            return state.content;
-        }
-        return state.content
-            .replace(/\r\n/g, '\n')
-            .replace(/\n/g, options.lineSeparator);
-    }
-    catch (err) {
-        if (options.throwOnFailure) {
-            throw err;
-        }
-        return xml;
-    }
-}
-formatXml.minify = (xml, options = {}) => {
-    return formatXml(xml, Object.assign(Object.assign({}, options), { indentation: '', lineSeparator: '' }));
-};
-if (true) {
-    module.exports = formatXml;
-}
-exports["default"] = formatXml;
-//# sourceMappingURL=index.js.map
-
-/***/ }),
-
-/***/ 8603:
-/***/ ((module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.ParsingError = void 0;
-class ParsingError extends Error {
-    constructor(message, cause) {
-        super(message);
-        this.cause = cause;
-    }
-}
-exports.ParsingError = ParsingError;
-let parsingState;
-function nextChild() {
-    return element(false) || text() || comment() || cdata() || processingInstruction();
-}
-function nextRootChild() {
-    match(/\s*/);
-    return element(true) || comment() || doctype() || processingInstruction();
-}
-function parseDocument() {
-    const declaration = processingInstruction();
-    const children = [];
-    let documentRootNode;
-    let child = nextRootChild();
-    while (child) {
-        if (child.node.type === 'Element') {
-            if (documentRootNode) {
-                throw new Error('Found multiple root nodes');
-            }
-            documentRootNode = child.node;
-        }
-        if (!child.excluded) {
-            children.push(child.node);
-        }
-        child = nextRootChild();
-    }
-    if (!documentRootNode) {
-        throw new ParsingError('Failed to parse XML', 'Root Element not found');
-    }
-    if (parsingState.xml.length !== 0) {
-        throw new ParsingError('Failed to parse XML', 'Not Well-Formed XML');
-    }
-    return {
-        declaration: declaration ? declaration.node : null,
-        root: documentRootNode,
-        children
-    };
-}
-function processingInstruction() {
-    const m = match(/^<\?([\w-:.]+)\s*/);
-    if (!m)
-        return;
-    // tag
-    const node = {
-        name: m[1],
-        type: 'ProcessingInstruction',
-        content: ''
-    };
-    const endMarkerIndex = parsingState.xml.indexOf('?>');
-    if (endMarkerIndex > -1) {
-        node.content = parsingState.xml.substring(0, endMarkerIndex).trim();
-        parsingState.xml = parsingState.xml.slice(endMarkerIndex);
-    }
-    else {
-        throw new ParsingError('Failed to parse XML', 'ProcessingInstruction closing tag not found');
-    }
-    match(/\?>/);
-    return {
-        excluded: parsingState.options.filter(node) === false,
-        node
-    };
-}
-function element(matchRoot) {
-    const m = match(/^<([^?!</>\s]+)\s*/);
-    if (!m)
-        return;
-    // name
-    const node = {
-        type: 'Element',
-        name: m[1],
-        attributes: {},
-        children: []
-    };
-    const excluded = matchRoot ? false : parsingState.options.filter(node) === false;
-    // attributes
-    while (!(eos() || is('>') || is('?>') || is('/>'))) {
-        const attr = attribute();
-        if (attr) {
-            node.attributes[attr.name] = attr.value;
-        }
-        else {
-            return;
-        }
-    }
-    // self closing tag
-    if (match(/^\s*\/>/)) {
-        node.children = null;
-        return {
-            excluded,
-            node
-        };
-    }
-    match(/\??>/);
-    // children
-    let child = nextChild();
-    while (child) {
-        if (!child.excluded) {
-            node.children.push(child.node);
-        }
-        child = nextChild();
-    }
-    // closing
-    if (parsingState.options.strictMode) {
-        const closingTag = `</${node.name}>`;
-        if (parsingState.xml.startsWith(closingTag)) {
-            parsingState.xml = parsingState.xml.slice(closingTag.length);
-        }
-        else {
-            throw new ParsingError('Failed to parse XML', `Closing tag not matching "${closingTag}"`);
-        }
-    }
-    else {
-        match(/^<\/[\w-:.\u00C0-\u00FF]+\s*>/);
-    }
-    return {
-        excluded,
-        node
-    };
-}
-function doctype() {
-    const m = match(/^<!DOCTYPE\s+\S+\s+SYSTEM[^>]*>/) ||
-        match(/^<!DOCTYPE\s+\S+\s+PUBLIC[^>]*>/) ||
-        match(/^<!DOCTYPE\s+\S+\s*\[[^\]]*]>/) ||
-        match(/^<!DOCTYPE\s+\S+\s*>/);
-    if (m) {
-        const node = {
-            type: 'DocumentType',
-            content: m[0]
-        };
-        return {
-            excluded: parsingState.options.filter(node) === false,
-            node
-        };
-    }
-}
-function cdata() {
-    if (parsingState.xml.startsWith('<![CDATA[')) {
-        const endPositionStart = parsingState.xml.indexOf(']]>');
-        if (endPositionStart > -1) {
-            const endPositionFinish = endPositionStart + 3;
-            const node = {
-                type: 'CDATA',
-                content: parsingState.xml.substring(0, endPositionFinish)
-            };
-            parsingState.xml = parsingState.xml.slice(endPositionFinish);
-            return {
-                excluded: parsingState.options.filter(node) === false,
-                node
-            };
-        }
-    }
-}
-function comment() {
-    const m = match(/^<!--[\s\S]*?-->/);
-    if (m) {
-        const node = {
-            type: 'Comment',
-            content: m[0]
-        };
-        return {
-            excluded: parsingState.options.filter(node) === false,
-            node
-        };
-    }
-}
-function text() {
-    const m = match(/^([^<]+)/);
-    if (m) {
-        const node = {
-            type: 'Text',
-            content: m[1]
-        };
-        return {
-            excluded: parsingState.options.filter(node) === false,
-            node
-        };
-    }
-}
-function attribute() {
-    const m = match(/([^=]+)\s*=\s*("[^"]*"|'[^']*'|[^>\s]+)\s*/);
-    if (m) {
-        return {
-            name: m[1].trim(),
-            value: stripQuotes(m[2].trim())
-        };
-    }
-}
-function stripQuotes(val) {
-    return val.replace(/^['"]|['"]$/g, '');
-}
-/**
- * Match `re` and advance the string.
- */
-function match(re) {
-    const m = parsingState.xml.match(re);
-    if (m) {
-        parsingState.xml = parsingState.xml.slice(m[0].length);
-        return m;
-    }
-}
-/**
- * End-of-source.
- */
-function eos() {
-    return 0 === parsingState.xml.length;
-}
-/**
- * Check for `prefix`.
- */
-function is(prefix) {
-    return 0 === parsingState.xml.indexOf(prefix);
-}
-/**
- * Parse the given XML string into an object.
- */
-function parseXml(xml, options = {}) {
-    xml = xml.trim();
-    const filter = options.filter || (() => true);
-    parsingState = {
-        xml,
-        options: Object.assign(Object.assign({}, options), { filter, strictMode: options.strictMode === true })
-    };
-    return parseDocument();
-}
-if (true) {
-    module.exports = parseXml;
-}
-exports["default"] = parseXml;
-//# sourceMappingURL=index.js.map
-
-/***/ }),
-
-/***/ 7474:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.CoverageParser = void 0;
-const model_1 = __nccwpck_require__(5852);
-const reporter_1 = __nccwpck_require__(2611);
-// eslint-disable-next-line import/no-commonjs, @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
-const parse = __nccwpck_require__(2596);
-class CoverageParser {
-    inputPath;
-    results;
-    constructor(inputPath) {
-        this.inputPath = inputPath;
-    }
-    async parseObject() {
-        return new Promise((resolve, reject) => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            parse(this.inputPath, (error, info) => {
-                if (error) {
-                    reject(error);
-                    return;
-                }
-                this.results = info.map(model_1.CoverageFromJSON);
-                resolve();
-            });
-        });
-    }
-    toReport(threshold = 80) {
-        const results = this.results?.flatMap(r => r.lines);
-        if (!results) {
-            return new reporter_1.Reporter({
-                summary: '',
-                detail: '',
-                comment: '',
-                annotations: [],
-                status: 'failure',
-                outputs: {}
-            });
-        }
-        const summary = ['### Coverage\n'].concat(this.results?.map(f => f.toSummary()) ?? []);
-        const summaryCount = { hit: 0, found: 0 };
-        for (const line of results) {
-            summaryCount.hit += line.hit;
-            summaryCount.found += line.found;
-        }
-        const state = summaryCount.found > 0
-            ? Math.round((summaryCount.hit / summaryCount.found) * 1000) / 10
-            : 0;
-        const icon = state >= threshold ? ':white_check_mark:' : ':x:';
-        const comment = [];
-        comment.push(`#### ${icon} Coverage`);
-        comment.push('');
-        comment.push(`| Hit | Found | State |`);
-        comment.push(`| ---- | ---- | ---- |`);
-        comment.push(`| ${summaryCount.hit}| ${summaryCount.found} | ${state} |`);
-        comment.push('');
-        return new reporter_1.Reporter({
-            summary: summary.join(''),
-            detail: '',
-            comment: comment.join('\n'),
-            annotations: [],
-            status: state >= threshold ? 'success' : 'failure',
-            outputs: {
-                coverage: state.toFixed(1),
-                'coverage-hit': summaryCount.hit.toString(),
-                'coverage-found': summaryCount.found.toString()
-            }
-        });
-    }
-}
-exports.CoverageParser = CoverageParser;
-
-
-/***/ }),
-
-/***/ 3196:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.exportReport = void 0;
-exports.escapeEmoji = escapeEmoji;
+exports.run = run;
+const os_1 = __importDefault(__nccwpck_require__(857));
+const path_1 = __importDefault(__nccwpck_require__(6928));
 const fs_1 = __nccwpck_require__(9896);
-const charactersLimit = 65535;
-const stepSummaryPath = process.env['GITHUB_STEP_SUMMARY'];
-const commentMarker = '<!-- flutter-test-action-comment -->';
-function combineConclusion(report, coverage) {
-    const conclusions = [report?.status, coverage?.status].filter((status) => status !== undefined);
-    if (conclusions.length === 0) {
-        return 'failure';
+const coverage_1 = __nccwpck_require__(7474);
+const parser_1 = __nccwpck_require__(4883);
+const runner_1 = __nccwpck_require__(562);
+const paths_1 = __nccwpck_require__(5782);
+const diff_1 = __nccwpck_require__(2371);
+const build_1 = __nccwpck_require__(6749);
+const markdown_1 = __nccwpck_require__(7148);
+const annotations_1 = __nccwpck_require__(7911);
+const format_1 = __nccwpck_require__(8998);
+const github_1 = __nccwpck_require__(4171);
+function parseThreshold(name, value) {
+    if (value.trim() === '')
+        return undefined;
+    const threshold = Number(value);
+    if (Number.isNaN(threshold) || threshold < 0 || threshold > 100) {
+        throw new Error(`${name} must be a number between 0 and 100.`);
     }
-    return conclusions.every(status => status === 'success')
-        ? 'success'
-        : 'failure';
+    return threshold;
 }
-async function appendStepSummary(title, summary, detail) {
-    if (!stepSummaryPath) {
-        return;
-    }
-    const content = [`## ${title}`, '', summary];
-    if (detail) {
-        content.push('', detail);
-    }
-    content.push('', '');
-    await fs_1.promises.appendFile(stepSummaryPath, content.join('\n'), 'utf8');
+function parseBoolean(name, value, fallback) {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === '')
+        return fallback;
+    if (normalized === 'true')
+        return true;
+    if (normalized === 'false')
+        return false;
+    throw new Error(`${name} must be true or false.`);
 }
-function buildCommentBody(comment) {
-    return `${commentMarker}\n${comment}`;
+function readInputs(core) {
+    const input = (name) => core.getInput(name);
+    return {
+        workingDirectory: input('workingDirectory') || '.',
+        testArgs: input('testArgs'),
+        flutterCommand: input('flutterCommand') || 'flutter',
+        coverage: parseBoolean('coverage', input('coverage'), false),
+        coverageThreshold: parseThreshold('coverageThreshold', input('coverageThreshold')),
+        changedLinesCoverageThreshold: parseThreshold('changedLinesCoverageThreshold', input('changedLinesCoverageThreshold')),
+        annotateUncoveredLines: parseBoolean('annotateUncoveredLines', input('annotateUncoveredLines'), true),
+        machinePath: input('machinePath'),
+        coveragePath: input('coveragePath'),
+        failOnError: parseBoolean('failOnError', input('failOnError'), true),
+        title: input('title') || 'Flutter test results',
+        token: input('token')
+    };
 }
-/**
- * Escape emoji sequences.
- */
-function escapeEmoji(input) {
-    const regex = /[\u{1f300}-\u{1f5ff}\u{1f900}-\u{1f9ff}\u{1f600}-\u{1f64f}\u{1f680}-\u{1f6ff}\u{2600}-\u{26ff}\u{2700}-\u{27bf}\u{1f1e6}-\u{1f1ff}\u{1f191}-\u{1f251}\u{1f004}\u{1f0cf}\u{1f170}-\u{1f171}\u{1f17e}-\u{1f17f}\u{1f18e}\u{3030}\u{2b50}\u{2b55}\u{2934}-\u{2935}\u{2b05}-\u{2b07}\u{2b1b}-\u{2b1c}\u{3297}\u{3299}\u{303d}\u{00a9}\u{00ae}\u{2122}\u{23f3}\u{24c2}\u{23e9}-\u{23ef}\u{25b6}\u{23f8}-\u{23fa}]/gu;
-    return input.replace(regex, ``); // replace emoji with empty string (\\u${(match.codePointAt(0) || "").toString(16)})
-}
-const exportReport = async ({ report, coverage }) => {
-    const [core, github] = await Promise.all([
-        Promise.all(/* import() */[__nccwpck_require__.e(662), __nccwpck_require__.e(623)]).then(__nccwpck_require__.bind(__nccwpck_require__, 7623)),
-        Promise.all(/* import() */[__nccwpck_require__.e(662), __nccwpck_require__.e(573)]).then(__nccwpck_require__.bind(__nccwpck_require__, 2573))
-    ]);
-    const token = core.getInput('token');
-    const conclusion = combineConclusion(report, coverage);
-    let title = core.getInput('title');
-    if (title.length > charactersLimit) {
-        core.error(`The 'title' will be truncated because the character limit (${charactersLimit}) exceeded.`);
-        title = title.substring(0, charactersLimit);
-    }
-    let summary = report?.summary ?? '';
-    summary += coverage?.summary ? `\n${coverage.summary}` : '';
-    if (summary.length > charactersLimit) {
-        core.error(`The 'summary' will be truncated because the character limit (${charactersLimit}) exceeded.`);
-        summary = summary.substring(0, charactersLimit);
-    }
-    let reportDetail = report?.detail ?? '';
-    reportDetail += coverage?.detail ? `\n${coverage.detail}` : '';
-    if (reportDetail.length > charactersLimit) {
-        core.error(`The 'text' will be truncated because the character limit (${charactersLimit}) exceeded.`);
-        reportDetail = reportDetail.substring(0, charactersLimit);
-    }
-    const annotations = report?.annotations ?? [];
-    if (annotations.length > 50) {
-        core.error('Annotations that exceed the limit (50) will be truncated.');
-    }
-    let comment = report?.comment ?? '';
-    comment += coverage?.comment ? `\n${coverage.comment}` : '';
-    core.setOutput('conclusion', conclusion);
-    for (const [name, value] of Object.entries({
-        ...(report?.outputs ?? {}),
-        ...(coverage?.outputs ?? {})
-    })) {
-        core.setOutput(name, value);
-    }
+async function run() {
+    const core = await Promise.all(/* import() */[__nccwpck_require__.e(662), __nccwpck_require__.e(475), __nccwpck_require__.e(383)]).then(__nccwpck_require__.bind(__nccwpck_require__, 2383));
     try {
-        await appendStepSummary(title, summary, reportDetail);
-    }
-    catch (error) {
-        core.error(`Failed to write step summary: ${error.message}`);
-    }
-    if (!token) {
-        core.info('Skipping GitHub check run and pull request comment because no token was provided.');
-        return;
-    }
-    try {
-        const octokit = github.getOctokit(token);
-        const owner = github.context.repo.owner;
-        const repo = github.context.repo.repo;
-        const pr = github.context.payload.pull_request;
-        const sha = (pr && pr.head.sha) || github.context.sha;
-        const issueNumber = pr?.number || github.context.issue.number;
-        if (comment && issueNumber) {
-            const body = buildCommentBody(comment);
-            const comments = await octokit.paginate(octokit.rest.issues.listComments, {
-                owner,
-                repo,
-                issue_number: issueNumber
+        const inputs = readInputs(core);
+        const paths = (0, paths_1.createPathContext)(inputs.workingDirectory);
+        let machinePath = inputs.machinePath;
+        let coveragePath = inputs.coveragePath;
+        let exitCode;
+        let stderrTail = [];
+        // With neither file given, run the tests. Otherwise only report.
+        if (!machinePath && !coveragePath) {
+            const result = await (0, runner_1.runFlutterTest)({
+                flutterCommand: inputs.flutterCommand,
+                workingDirectory: inputs.workingDirectory,
+                testArgs: inputs.testArgs,
+                coverage: inputs.coverage,
+                outputPath: path_1.default.join(process.env['RUNNER_TEMP'] || os_1.default.tmpdir(), `flutter-test-machine-${Date.now()}.json`)
             });
-            const existingComment = comments.find(current => typeof current.body === 'string' &&
-                current.body.includes(commentMarker));
-            if (existingComment) {
-                await octokit.rest.issues.updateComment({
-                    owner,
-                    repo,
-                    comment_id: existingComment.id,
-                    body
-                });
+            exitCode = result.exitCode;
+            stderrTail = result.stderrTail;
+            machinePath = result.machinePath;
+            coveragePath = result.coveragePath ?? '';
+            core.setOutput('exit-code', exitCode.toString());
+            core.setOutput('machine-path', machinePath);
+        }
+        let testRun;
+        if (machinePath) {
+            const parsed = await (0, parser_1.parseMachineFile)(machinePath);
+            testRun = parsed.run;
+            if (parsed.invalidLines > 0) {
+                core.debug(`Skipped ${parsed.invalidLines} lines that were not JSON.`);
+            }
+        }
+        const coverage = coveragePath
+            ? await (0, coverage_1.parseLcovFile)(coveragePath)
+            : undefined;
+        // The context gives the links in the report even without a token.
+        const github = await Promise.all(/* import() */[__nccwpck_require__.e(662), __nccwpck_require__.e(573)]).then(__nccwpck_require__.bind(__nccwpck_require__, 2573));
+        const context = (0, github_1.readContext)(github);
+        const octokit = inputs.token ? github.getOctokit(inputs.token) : undefined;
+        let changedLines;
+        if (octokit && context.pullNumber && coverage) {
+            try {
+                const files = await (0, github_1.fetchChangedFiles)(octokit, context);
+                changedLines = (0, diff_1.computeChangedLinesCoverage)(files, coverage, paths);
+            }
+            catch (error) {
+                core.warning(`Could not read the changed files of the pull request: ${error.message}`);
+            }
+        }
+        const report = (0, build_1.buildReport)({
+            title: inputs.title,
+            run: testRun,
+            coverage,
+            changedLines,
+            exitCode,
+            stderrTail,
+            coverageThreshold: inputs.coverageThreshold,
+            changedLinesCoverageThreshold: inputs.changedLinesCoverageThreshold,
+            paths,
+            links: context.links
+        });
+        setOutputs(core, report);
+        logReport(core, report);
+        await writeStepSummary(core, report);
+        if (octokit) {
+            await publish(core, octokit, context, report, inputs);
+        }
+        else {
+            core.info('Skipping the check run and pull request comment because no token was provided.');
+        }
+        if (report.conclusion === 'failure') {
+            if (inputs.failOnError) {
+                core.setFailed(failureMessage(report));
             }
             else {
-                await octokit.rest.issues.createComment({
-                    owner,
-                    repo,
-                    issue_number: issueNumber,
-                    body
-                });
+                core.warning(failureMessage(report));
             }
         }
-        else if (comment) {
-            core.info('Skipping pull request comment because the workflow is not running for a pull request.');
-        }
-        await octokit.rest.checks.create({
-            owner,
-            repo,
-            name: title,
-            head_sha: sha,
-            status: 'completed',
-            conclusion,
-            output: {
-                title,
-                summary,
-                text: reportDetail,
-                annotations: annotations.slice(0, 50)
-            }
-        });
     }
     catch (error) {
-        if (error instanceof Error) {
-            core.setFailed(`${error.name}:${error.message}\n\n${error.stack}`);
+        core.setFailed(error instanceof Error ? (error.stack ?? error.message) : String(error));
+    }
+}
+async function publish(core, octokit, context, report, inputs) {
+    // The comment links to the check run, so create the check run first.
+    try {
+        const checkRunUrl = await (0, github_1.createCheckRun)(octokit, context, {
+            name: inputs.title,
+            conclusion: report.conclusion,
+            title: checkTitle(report),
+            summary: (0, markdown_1.renderCheckSummary)(report),
+            text: (0, markdown_1.renderCheckText)(report),
+            annotations: (0, annotations_1.buildAnnotations)(report, {
+                annotateUncoveredLines: inputs.annotateUncoveredLines
+            })
+        });
+        if (checkRunUrl) {
+            report.links = { ...context.links, checkRunUrl };
+            core.setOutput('check-run-url', checkRunUrl);
         }
     }
-};
-exports.exportReport = exportReport;
+    catch (error) {
+        core.warning(`Could not create the check run. Grant "checks: write" to the job to enable it. ${error.message}`);
+    }
+    if (!context.pullNumber) {
+        core.info('Skipping the pull request comment because the workflow is not running for a pull request.');
+        return;
+    }
+    try {
+        await (0, github_1.upsertComment)(octokit, context, inputs.title, (0, markdown_1.renderComment)(report));
+    }
+    catch (error) {
+        core.warning(`Could not write the pull request comment. Grant "pull-requests: write" to the job to enable it. ${error.message}`);
+    }
+}
+function checkTitle(report) {
+    const parts = [];
+    if (report.tests) {
+        if (report.tests.failed > 0)
+            parts.push(`${report.tests.failed} failed`);
+        if (report.tests.loadFailures.length > 0) {
+            parts.push(`${report.tests.loadFailures.length} failed to load`);
+        }
+        parts.push(`${report.tests.passed} passed`);
+        if (report.tests.skipped > 0)
+            parts.push(`${report.tests.skipped} skipped`);
+    }
+    if (report.coverage?.lines.percent !== undefined) {
+        parts.push(`coverage ${report.coverage.lines.percent.toFixed(1)}%`);
+    }
+    return parts.join(', ') || report.title;
+}
+function failureMessage(report) {
+    const reasons = [];
+    if (report.tests && report.tests.failed > 0) {
+        reasons.push(`${report.tests.failed} test(s) failed.`);
+    }
+    if (report.tests && report.tests.loadFailures.length > 0) {
+        reasons.push(`${report.tests.loadFailures.length} test file(s) failed to load.`);
+    }
+    reasons.push(...report.problems.map(p => p.replace(/`/gu, '')));
+    return reasons.join(' ');
+}
+function setOutputs(core, report) {
+    core.setOutput('conclusion', report.conclusion);
+    if (report.tests) {
+        core.setOutput('tests', report.tests.total.toString());
+        core.setOutput('passed', report.tests.passed.toString());
+        core.setOutput('failed', report.tests.failed.toString());
+        core.setOutput('skipped', report.tests.skipped.toString());
+        core.setOutput('duration', Math.round(report.tests.durationMs).toString());
+    }
+    if (report.coverage) {
+        core.setOutput('coverage', report.coverage.lines.percent?.toFixed(1) ?? '');
+        core.setOutput('coverage-hit', report.coverage.lines.hit.toString());
+        core.setOutput('coverage-found', report.coverage.lines.found.toString());
+    }
+    if (report.changedLines) {
+        core.setOutput('changed-lines-coverage', report.changedLines.percent?.toFixed(1) ?? '');
+    }
+}
+function logReport(core, report) {
+    const tests = report.tests;
+    if (tests) {
+        core.info(`${tests.failed} failed, ${tests.passed} passed, ${tests.skipped} skipped in ${(0, format_1.formatDuration)(tests.durationMs)}.`);
+        for (const failure of tests.failures) {
+            const location = `${failure.displayPath}${failure.line ? `:${failure.line}` : ''}`;
+            core.startGroup(`❌ ${failure.name} (${location})`);
+            const { messages, output } = (0, markdown_1.failureDetails)(failure.test);
+            for (const message of messages) {
+                core.info(message.text);
+                if (message.stackTrace)
+                    core.info(message.stackTrace);
+            }
+            if (output.length > 0)
+                core.info(`Output:\n${output.join('\n')}`);
+            core.endGroup();
+        }
+        for (const failure of tests.loadFailures) {
+            core.startGroup(`💥 Failed to load ${failure.displayPath}`);
+            for (const error of failure.errors) {
+                core.info((0, format_1.cleanErrorMessage)(error.message));
+            }
+            core.endGroup();
+        }
+    }
+}
+async function writeStepSummary(core, report) {
+    const summaryPath = process.env['GITHUB_STEP_SUMMARY'];
+    if (!summaryPath)
+        return;
+    try {
+        await fs_1.promises.appendFile(summaryPath, `${(0, markdown_1.renderStepSummary)(report)}\n\n`, 'utf8');
+    }
+    catch (error) {
+        core.warning(`Could not write the step summary: ${error.message}`);
+    }
+}
+run();
 
 
 /***/ }),
 
-/***/ 5263:
+/***/ 4883:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.parseMachineFile = parseMachineFile;
+exports.parseMachineOutput = parseMachineOutput;
+const fs_1 = __nccwpck_require__(9896);
+async function parseMachineFile(path) {
+    const content = await fs_1.promises.readFile(path, 'utf8');
+    return parseMachineOutput(content);
+}
+/**
+ * Builds a test run from the JSON lines written by `flutter test --machine`.
+ *
+ * @see https://github.com/dart-lang/test/blob/master/pkgs/test/doc/json_reporter.md
+ */
+function parseMachineOutput(content) {
+    const suites = new Map();
+    const groupNames = new Map();
+    const tests = new Map();
+    const run = { suites: [] };
+    let invalidLines = 0;
+    for (const line of content.split(/\r?\n/u)) {
+        if (line.trim().length === 0)
+            continue;
+        let event;
+        try {
+            event = JSON.parse(line);
+        }
+        catch {
+            invalidLines++;
+            continue;
+        }
+        // Flutter also writes `[{"event": ...}]` lines for the daemon protocol.
+        if (event === null || typeof event !== 'object' || Array.isArray(event)) {
+            continue;
+        }
+        switch (event['type']) {
+            case 'suite': {
+                const suite = event['suite'];
+                suites.set(suite['id'], {
+                    id: suite['id'],
+                    path: suite['path'] ?? '',
+                    platform: suite['platform'] ?? '',
+                    tests: [],
+                    loadErrors: []
+                });
+                break;
+            }
+            case 'group': {
+                const group = event['group'];
+                groupNames.set(group['id'], group['name'] ?? '');
+                break;
+            }
+            case 'testStart': {
+                const test = event['test'];
+                tests.set(test['id'], {
+                    id: test['id'],
+                    suiteId: test['suiteID'],
+                    groupIds: test['groupIDs'] ?? [],
+                    name: test['name'] ?? '',
+                    url: test['url'] ?? undefined,
+                    line: test['line'] ?? undefined,
+                    rootUrl: test['root_url'] ?? undefined,
+                    rootLine: test['root_line'] ?? undefined,
+                    skipReason: test['metadata']?.['skipReason'] ?? undefined,
+                    startTime: event['time'] ?? 0,
+                    errors: [],
+                    prints: []
+                });
+                break;
+            }
+            case 'error': {
+                tests.get(event['testID'])?.errors.push({
+                    message: event['error'] ?? '',
+                    stackTrace: event['stackTrace'] ?? '',
+                    isFailure: event['isFailure'] === true
+                });
+                break;
+            }
+            case 'print': {
+                tests.get(event['testID'])?.prints.push(event['message'] ?? '');
+                break;
+            }
+            case 'testDone': {
+                const test = tests.get(event['testID']);
+                if (test) {
+                    test.done = {
+                        result: event['result'],
+                        skipped: event['skipped'] === true,
+                        hidden: event['hidden'] === true,
+                        time: event['time'] ?? test.startTime
+                    };
+                }
+                break;
+            }
+            case 'done': {
+                run.success = event['success'] ?? undefined;
+                run.durationMs = event['time'] ?? undefined;
+                break;
+            }
+        }
+    }
+    for (const pending of tests.values()) {
+        const suite = suites.get(pending.suiteId);
+        if (!suite)
+            continue;
+        const status = toStatus(pending);
+        // Hidden tests are the synthetic "loading <path>" test and setUpAll /
+        // tearDownAll. They only matter when they fail.
+        const hidden = pending.done?.hidden ?? pending.groupIds.length === 0;
+        if (hidden && status !== 'failure')
+            continue;
+        if (pending.groupIds.length === 0 && pending.name.startsWith('loading ')) {
+            suite.loadErrors.push(...withFallbackError(pending));
+            continue;
+        }
+        suite.tests.push(toTestCase(pending, status, groupNames));
+    }
+    run.suites = [...suites.values()];
+    return { run, invalidLines };
+}
+function toStatus(test) {
+    if (!test.done)
+        return 'failure';
+    if (test.done.result !== 'success')
+        return 'failure';
+    return test.done.skipped ? 'skipped' : 'success';
+}
+function withFallbackError(test) {
+    if (test.errors.length > 0)
+        return test.errors;
+    const message = test.done
+        ? `The test finished with result "${test.done.result}".`
+        : 'The test did not finish. The test process may have crashed or timed out.';
+    return [{ message, stackTrace: '', isFailure: false }];
+}
+function toTestCase(test, status, groupNames) {
+    const innermostGroup = test.groupIds[test.groupIds.length - 1];
+    const groupName = innermostGroup !== undefined ? groupNames.get(innermostGroup) : undefined;
+    // Tests written with helpers such as testWidgets report the helper's
+    // location in `url` and the caller's location in `root_url`.
+    const url = test.rootUrl ?? test.url;
+    const line = test.rootUrl ? test.rootLine : test.line;
+    return {
+        id: test.id,
+        suiteId: test.suiteId,
+        name: test.name,
+        groupName: groupName || undefined,
+        location: url ? { url, line } : undefined,
+        status,
+        durationMs: Math.max(0, (test.done?.time ?? test.startTime) - test.startTime),
+        skipReason: status === 'skipped' ? test.skipReason : undefined,
+        errors: status === 'failure' ? withFallbackError(test) : test.errors,
+        prints: test.prints
+    };
+}
+
+
+/***/ }),
+
+/***/ 5782:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.createPathContext = createPathContext;
+exports.toRepoPath = toRepoPath;
+exports.displayPath = displayPath;
+const path_1 = __importDefault(__nccwpck_require__(6928));
+const url_1 = __nccwpck_require__(7016);
+function createPathContext(workingDirectory, workspace = process.env['GITHUB_WORKSPACE'] || process.cwd()) {
+    const absolute = path_1.default.resolve(workspace, workingDirectory || '.');
+    return {
+        workspace,
+        workingDirectory: toPosix(path_1.default.relative(workspace, absolute))
+    };
+}
+/**
+ * Converts a path or URL from the machine output or lcov.info into a path
+ * relative to the repository root. Returns undefined for locations outside of
+ * the repository, such as `package:flutter_test/...`.
+ */
+function toRepoPath(location, context) {
+    let filePath = location;
+    if (location.startsWith('file://')) {
+        filePath = (0, url_1.fileURLToPath)(location);
+    }
+    else if (/^[a-z][a-z0-9+.-]*:/iu.test(location) &&
+        !isWindowsPath(location)) {
+        return undefined;
+    }
+    const absolute = path_1.default.isAbsolute(filePath)
+        ? filePath
+        : path_1.default.resolve(context.workspace, context.workingDirectory, filePath);
+    const relative = path_1.default.relative(context.workspace, absolute);
+    if (relative.startsWith('..') || path_1.default.isAbsolute(relative)) {
+        return undefined;
+    }
+    return toPosix(relative);
+}
+/**
+ * Path for display: relative to the repository when possible, otherwise the
+ * original value without the file:// scheme.
+ */
+function displayPath(location, context) {
+    const repoPath = toRepoPath(location, context);
+    if (repoPath)
+        return repoPath;
+    return location.startsWith('file://') ? (0, url_1.fileURLToPath)(location) : location;
+}
+function isWindowsPath(value) {
+    return /^[a-z]:[\\/]/iu.test(value);
+}
+function toPosix(value) {
+    return value.split(path_1.default.sep).join('/');
+}
+
+
+/***/ }),
+
+/***/ 7911:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.buildAnnotations = buildAnnotations;
+const markdown_1 = __nccwpck_require__(7148);
+const format_1 = __nccwpck_require__(8998);
+const maxMessageChars = 4000;
+const maxDetailsChars = 20000;
+function buildAnnotations(report, { annotateUncoveredLines }) {
+    const annotations = [];
+    for (const failure of report.tests?.failures ?? []) {
+        if (!failure.path)
+            continue;
+        const { messages, output } = (0, markdown_1.failureDetails)(failure.test);
+        const line = failure.line ?? 1;
+        const rawDetails = [
+            messages.map(m => m.stackTrace.trim()).find(Boolean),
+            output.length > 0 ? `Output:\n${output.join('\n')}` : undefined
+        ]
+            .filter(Boolean)
+            .join('\n\n');
+        annotations.push({
+            path: failure.path,
+            start_line: line,
+            end_line: line,
+            annotation_level: 'failure',
+            title: (0, format_1.truncateChars)(failure.name, 255),
+            message: (0, format_1.truncateChars)(messages.map(m => m.text).join('\n\n') || 'Test failed.', maxMessageChars),
+            raw_details: rawDetails
+                ? (0, format_1.truncateChars)(rawDetails, maxDetailsChars)
+                : undefined
+        });
+    }
+    for (const failure of report.tests?.loadFailures ?? []) {
+        if (!failure.path)
+            continue;
+        annotations.push({
+            path: failure.path,
+            start_line: 1,
+            end_line: 1,
+            annotation_level: 'failure',
+            title: 'Failed to load the test file',
+            message: (0, format_1.truncateChars)(failure.errors.map(e => (0, format_1.cleanErrorMessage)(e.message)).join('\n\n'), maxMessageChars)
+        });
+    }
+    if (annotateUncoveredLines) {
+        for (const file of report.changedLines?.data.files ?? []) {
+            for (const range of file.uncovered) {
+                annotations.push({
+                    path: file.path,
+                    start_line: range.start,
+                    end_line: range.end,
+                    annotation_level: 'notice',
+                    title: 'Not covered by tests',
+                    message: range.start === range.end
+                        ? `Changed line ${range.start} is not covered by tests.`
+                        : `Changed lines ${range.start}-${range.end} are not covered by tests.`
+                });
+            }
+        }
+    }
+    return annotations;
+}
+
+
+/***/ }),
+
+/***/ 6749:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.buildReport = buildReport;
+exports.displayName = displayName;
+const paths_1 = __nccwpck_require__(5782);
+const coverage_1 = __nccwpck_require__(7474);
+const format_1 = __nccwpck_require__(8998);
+const slowestCount = 10;
+function buildReport(input) {
+    const tests = input.run ? buildTestReport(input.run, input.paths) : undefined;
+    const coverage = input.coverage
+        ? buildCoverageReport(input.coverage, input.paths, input.coverageThreshold)
+        : undefined;
+    const changedLines = input.changedLines
+        ? buildChangedLinesReport(input.changedLines, input.changedLinesCoverageThreshold)
+        : undefined;
+    const problems = [];
+    if (tests) {
+        const hasFailures = tests.failed > 0 || tests.loadFailures.length > 0;
+        if (input.exitCode !== undefined && input.exitCode !== 0 && !hasFailures) {
+            problems.push(`\`flutter test\` exited with code ${input.exitCode}, but no failed test was found in its output.`);
+        }
+        else if (tests.total === 0 && !hasFailures) {
+            problems.push('No tests were found.');
+        }
+        else if (input.run?.success === undefined && !hasFailures) {
+            problems.push('The test output ended before the run finished. The test process may have been interrupted.');
+        }
+    }
+    if (coverage && !coverage.passed) {
+        problems.push(`Coverage ${(0, format_1.formatPercent)(coverage.lines.percent)} is below the threshold of ${coverage.threshold}%.`);
+    }
+    if (changedLines && !changedLines.passed) {
+        problems.push(`Coverage of changed lines ${(0, format_1.formatPercent)(changedLines.percent)} is below the threshold of ${changedLines.threshold}%.`);
+    }
+    if (!tests && !coverage) {
+        problems.push('There were no test results or coverage to report.');
+    }
+    const testsFailed = tests !== undefined && (tests.failed > 0 || tests.loadFailures.length > 0);
+    return {
+        title: input.title,
+        conclusion: testsFailed || problems.length > 0 ? 'failure' : 'success',
+        problems,
+        tests,
+        coverage,
+        changedLines,
+        exitCode: input.exitCode,
+        stderrTail: input.stderrTail ?? [],
+        links: input.links
+    };
+}
+function displayName(test) {
+    const group = test.groupName;
+    if (group && test.name.startsWith(`${group} `)) {
+        return `${group} › ${test.name.substring(group.length + 1)}`;
+    }
+    return test.name;
+}
+function buildTestReport(run, paths) {
+    const reported = [];
+    const files = [];
+    const loadFailures = [];
+    for (const suite of run.suites) {
+        const suitePath = (0, paths_1.toRepoPath)(suite.path, paths);
+        const suiteDisplayPath = (0, paths_1.displayPath)(suite.path, paths);
+        if (suite.loadErrors.length > 0) {
+            loadFailures.push({
+                path: suitePath,
+                displayPath: suiteDisplayPath,
+                errors: suite.loadErrors
+            });
+        }
+        for (const test of suite.tests) {
+            reported.push(toReportedTest(test, suite, paths));
+        }
+        if (suite.tests.length > 0) {
+            files.push({
+                path: suitePath,
+                displayPath: suiteDisplayPath,
+                total: suite.tests.length,
+                passed: count(suite.tests, 'success'),
+                failed: count(suite.tests, 'failure'),
+                skipped: count(suite.tests, 'skipped'),
+                durationMs: suite.tests.reduce((sum, t) => sum + t.durationMs, 0)
+            });
+        }
+    }
+    files.sort((a, b) => Number(b.failed > 0) - Number(a.failed > 0) ||
+        b.durationMs - a.durationMs ||
+        a.displayPath.localeCompare(b.displayPath));
+    const all = reported.map(r => r.test);
+    const sumOfTests = all.reduce((sum, t) => sum + t.durationMs, 0);
+    return {
+        total: all.length,
+        passed: count(all, 'success'),
+        failed: count(all, 'failure'),
+        skipped: count(all, 'skipped'),
+        durationMs: run.durationMs ?? sumOfTests,
+        failures: reported.filter(r => r.test.status === 'failure'),
+        loadFailures,
+        skippedTests: reported.filter(r => r.test.status === 'skipped'),
+        slowest: reported
+            .filter(r => r.test.status !== 'skipped')
+            .sort((a, b) => b.test.durationMs - a.test.durationMs)
+            .slice(0, slowestCount),
+        files
+    };
+}
+function toReportedTest(test, suite, paths) {
+    const locationPath = test.location
+        ? (0, paths_1.toRepoPath)(test.location.url, paths)
+        : undefined;
+    const suitePath = (0, paths_1.toRepoPath)(suite.path, paths);
+    // Prefer the location of the test definition. When it is outside the
+    // repository (for example inside a package), fall back to the test file.
+    if (locationPath || !suitePath) {
+        return {
+            test,
+            name: displayName(test),
+            path: locationPath,
+            displayPath: test.location
+                ? (0, paths_1.displayPath)(test.location.url, paths)
+                : (0, paths_1.displayPath)(suite.path, paths),
+            line: locationPath ? test.location?.line : undefined
+        };
+    }
+    return {
+        test,
+        name: displayName(test),
+        path: suitePath,
+        displayPath: suitePath
+    };
+}
+function count(tests, status) {
+    return tests.filter(t => t.status === status).length;
+}
+function buildCoverageReport(data, paths, threshold) {
+    const withPercent = (c) => ({
+        ...c,
+        percent: (0, coverage_1.percentage)(c)
+    });
+    const ratio = data.lines.found > 0 ? (data.lines.hit / data.lines.found) * 100 : 0;
+    return {
+        lines: withPercent(data.lines),
+        functions: withPercent(data.functions),
+        branches: withPercent(data.branches),
+        threshold,
+        passed: threshold === undefined || ratio >= threshold,
+        files: data.files
+            .filter(file => file.lines.found > 0)
+            .map(file => ({
+            path: (0, paths_1.toRepoPath)(file.path, paths),
+            displayPath: (0, paths_1.displayPath)(file.path, paths),
+            hit: file.lines.hit,
+            found: file.lines.found,
+            percent: (0, coverage_1.percentage)(file.lines)
+        }))
+            .sort((a, b) => (a.percent ?? 0) - (b.percent ?? 0) ||
+            b.found - b.hit - (a.found - a.hit))
+    };
+}
+function buildChangedLinesReport(data, threshold) {
+    const ratio = data.total > 0 ? (data.covered / data.total) * 100 : undefined;
+    return {
+        data,
+        percent: (0, coverage_1.percentage)({ hit: data.covered, found: data.total }),
+        threshold,
+        passed: threshold === undefined || ratio === undefined || ratio >= threshold
+    };
+}
+
+
+/***/ }),
+
+/***/ 8998:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.Annotation = void 0;
-/*
- * @see https://docs.github.com/en/rest/reference/checks#annotations-object
- */
-class Annotation {
-    // Required. The path of the file to add an annotation to. For example, assets/css/main.css.
-    path;
-    // Required. The start line of the annotation.
-    start_line;
-    // Required. The end line of the annotation.
-    end_line;
-    // The start column of the annotation. Annotations only support start_column and end_column on the same line. Omit this parameter if start_line and end_line have different values.
-    start_column;
-    // The end column of the annotation. Annotations only support start_column and end_column on the same line. Omit this parameter if start_line and end_line have different values.
-    end_column;
-    // Required. The level of the annotation. Can be one of notice, warning, or failure.
-    annotation_level;
-    // Required. A short description of the feedback for these lines of code. The maximum size is 64 KB.
-    message;
-    // The title that represents the annotation. The maximum size is 255 characters.
-    title;
-    // Details about this annotation. The maximum size is 64 KB.
-    raw_details;
-    constructor({ path, start_line, end_line, start_column, end_column, annotation_level, message, title, raw_details }) {
-        this.path = path;
-        this.start_line = start_line;
-        this.end_line = end_line;
-        this.start_column = start_column;
-        this.end_column = end_column;
-        this.annotation_level = annotation_level;
-        this.message = message;
-        this.title = title;
-        this.raw_details = raw_details;
-    }
+exports.formatDuration = formatDuration;
+exports.formatNumber = formatNumber;
+exports.formatPercent = formatPercent;
+exports.escapeMarkdown = escapeMarkdown;
+exports.codeBlock = codeBlock;
+exports.details = details;
+exports.truncateText = truncateText;
+exports.truncateChars = truncateChars;
+exports.projectFrames = projectFrames;
+exports.exceptionStack = exceptionStack;
+exports.isSeeLogsMessage = isSeeLogsMessage;
+exports.splitExceptionReports = splitExceptionReports;
+exports.cleanErrorMessage = cleanErrorMessage;
+exports.blobUrl = blobUrl;
+exports.commitUrl = commitUrl;
+function formatDuration(ms) {
+    if (ms < 1000)
+        return `${Math.round(ms)} ms`;
+    const seconds = ms / 1000;
+    if (seconds < 60)
+        return `${seconds.toFixed(1)} s`;
+    const minutes = Math.floor(seconds / 60);
+    const rest = Math.round(seconds - minutes * 60);
+    return `${minutes}m ${rest}s`;
 }
-exports.Annotation = Annotation;
+function formatNumber(value) {
+    return value.toLocaleString('en-US');
+}
+function formatPercent(value) {
+    return value === undefined ? 'n/a' : `${value.toFixed(1)}%`;
+}
+/**
+ * Escapes text for inline Markdown, including table cells.
+ */
+function escapeMarkdown(text) {
+    return text.replace(/[\\`*_[\]<>|~#]/gu, match => `\\${match}`);
+}
+/**
+ * Wraps text in a fenced code block that cannot be closed by the content.
+ */
+function codeBlock(text, language = 'text') {
+    const longestFence = Math.max(2, ...[...text.matchAll(/`{3,}/gu)].map(match => match[0].length));
+    const fence = '`'.repeat(longestFence + 1);
+    return `${fence}${language}\n${text}\n${fence}`;
+}
+function details(summary, body) {
+    return `<details><summary>${summary}</summary>\n\n${body}\n\n</details>`;
+}
+/**
+ * Truncates text to a number of lines and characters, noting what was cut.
+ */
+function truncateText(text, maxLines, maxChars = Number.POSITIVE_INFINITY) {
+    const lines = text.split('\n');
+    let result = lines.slice(0, maxLines).join('\n');
+    let truncated = lines.length > maxLines;
+    if (result.length > maxChars) {
+        result = result.substring(0, maxChars);
+        truncated = true;
+    }
+    return truncated ? `${result}\n… (truncated)` : result;
+}
+function truncateChars(text, maxChars) {
+    if (text.length <= maxChars)
+        return text;
+    return `${text.substring(0, Math.max(0, maxChars - 15))}\n… (truncated)`;
+}
+const frameworkFrame = /(^|\(|\s)(dart:|package:(flutter|flutter_test|test|test_api|test_core|stack_trace|matcher|fake_async|async)(\/|\s|$))/u;
+/**
+ * Keeps the stack frames that point to the project, dropping the Dart SDK,
+ * Flutter and the test framework.
+ */
+function projectFrames(stackTrace) {
+    return stackTrace
+        .split('\n')
+        .map(line => line.trimEnd())
+        .filter(line => line.length > 0 &&
+        !frameworkFrame.test(line.trim()) &&
+        !line.startsWith('===== asynchronous gap') &&
+        !line.includes('<asynchronous suspension>') &&
+        !/^\(elided /u.test(line.trim()))
+        .join('\n');
+}
+/**
+ * Returns the stack frames listed in a Flutter exception report under "When
+ * the exception was thrown, this was the stack:".
+ */
+function exceptionStack(report) {
+    const frames = [];
+    let inStack = false;
+    for (const line of report.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed === 'When the exception was thrown, this was the stack:') {
+            inStack = true;
+            continue;
+        }
+        if (!inStack)
+            continue;
+        if (/^#\d+\s/u.test(trimmed) ||
+            trimmed.startsWith('<asynchronous') ||
+            /^\(elided /u.test(trimmed)) {
+            frames.push(trimmed);
+            continue;
+        }
+        break;
+    }
+    return frames.join('\n');
+}
+const seeLogsMessage = /^Test failed\. See exception logs above\./u;
+const exceptionHeader = /^══╡ EXCEPTION CAUGHT BY .* ╞═+$/u;
+const exceptionFooter = /^═{10,}$/u;
+function isSeeLogsMessage(message) {
+    return seeLogsMessage.test(message.trim());
+}
+/**
+ * Splits the print output of a test into the exception reports written by the
+ * Flutter test framework and the remaining output.
+ */
+function splitExceptionReports(prints) {
+    const exceptions = [];
+    const output = [];
+    let current;
+    for (const line of prints.join('\n').split('\n')) {
+        if (exceptionHeader.test(line)) {
+            current = [line];
+            continue;
+        }
+        if (current) {
+            current.push(line);
+            if (exceptionFooter.test(line)) {
+                exceptions.push(current.join('\n'));
+                current = undefined;
+            }
+            continue;
+        }
+        output.push(line);
+    }
+    if (current)
+        exceptions.push(current.join('\n'));
+    return {
+        exceptions,
+        output: output.join('\n').trim() ? output : []
+    };
+}
+/**
+ * Removes decoration and repeated information from an error message, keeping
+ * the lines that explain the failure (Expected / Actual and so on).
+ */
+function cleanErrorMessage(message) {
+    const result = [];
+    let skipping;
+    for (const line of message.split('\n')) {
+        const trimmed = line.trim();
+        if (exceptionHeader.test(trimmed) || exceptionFooter.test(trimmed)) {
+            continue;
+        }
+        if (trimmed === 'When the exception was thrown, this was the stack:') {
+            skipping = 'stack';
+            continue;
+        }
+        if (trimmed === 'The test description was:') {
+            skipping = 'description';
+            continue;
+        }
+        if (skipping === 'stack') {
+            if (/^#\d+\s/u.test(trimmed) || /^\(elided /u.test(trimmed))
+                continue;
+            if (trimmed === '' || trimmed.startsWith('<asynchronous'))
+                continue;
+            skipping = undefined;
+        }
+        if (skipping === 'description') {
+            // The description is the indented test name on the next line.
+            skipping = undefined;
+            if (line.startsWith('  '))
+                continue;
+        }
+        result.push(line.trimEnd());
+    }
+    return result
+        .join('\n')
+        .replace(/\n{3,}/gu, '\n\n')
+        .trim();
+}
+function blobUrl(links, path, start, end) {
+    if (!links || !links.owner || !links.repo || !links.sha)
+        return undefined;
+    const encoded = path.split('/').map(encodeURIComponent).join('/');
+    let url = `${links.serverUrl}/${links.owner}/${links.repo}/blob/${links.sha}/${encoded}`;
+    if (start !== undefined) {
+        url += `#L${start}`;
+        if (end !== undefined && end !== start)
+            url += `-L${end}`;
+    }
+    return url;
+}
+function commitUrl(links) {
+    if (!links || !links.owner || !links.repo || !links.sha)
+        return undefined;
+    return `${links.serverUrl}/${links.owner}/${links.repo}/commit/${links.sha}`;
+}
 
 
 /***/ }),
@@ -861,494 +1375,456 @@ exports.Annotation = Annotation;
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.CoverageFromJSON = exports.Coverage = void 0;
-const __1 = __nccwpck_require__(5852);
-class Coverage {
-    title;
-    file;
-    branches;
-    functions;
-    lines;
-    constructor({ title, file, branches, functions, lines }) {
-        this.title = title;
-        this.file = file;
-        this.branches = branches;
-        this.functions = functions;
-        this.lines = lines;
-    }
-    toSummary() {
-        const state = this.lines.found > 0
-            ? Math.round((this.lines.hit / this.lines.found) * 1000) / 10
-            : 0;
-        const icon = state > 80 ? ':white_check_mark:' : ':x:';
-        const line = [];
-        line.push(`#### ${icon} ${this.file}`);
-        line.push('');
-        line.push(`| Hit | Found | State |`);
-        line.push(`| ---- | ---- | ---- |`);
-        line.push(`| ${this.lines.hit}| ${this.lines.found} | ${state} |`);
-        line.push('');
-        return line.join(`\n`);
-    }
+exports.outputLimit = void 0;
+exports.renderComment = renderComment;
+exports.renderCheckSummary = renderCheckSummary;
+exports.renderCheckText = renderCheckText;
+exports.renderStepSummary = renderStepSummary;
+exports.failureDetails = failureDetails;
+const format_1 = __nccwpck_require__(8998);
+// GitHub rejects comments and check run outputs longer than 65535 characters.
+// Keep a margin for the comment marker and the omission note.
+exports.outputLimit = 63000;
+const maxDetailedFailuresInComment = 10;
+const maxErrorsPerTest = 3;
+const maxMessageLines = 30;
+const maxMessageChars = 3000;
+const maxStackLines = 30;
+const maxOutputLines = 40;
+const maxChangedFilesInComment = 20;
+const maxLowestCoverageFiles = 20;
+function renderComment(report) {
+    return assemble([
+        () => renderHeader(report),
+        budget => renderFailures(report, budget, {
+            maxDetailed: maxDetailedFailuresInComment,
+            fullStack: false
+        }),
+        budget => renderLoadFailures(report, budget),
+        () => renderChangedLines(report, maxChangedFilesInComment),
+        () => renderSlowest(report),
+        () => renderSkipped(report)
+    ], renderFooter(report), omittedNote(report));
 }
-exports.Coverage = Coverage;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const CoverageFromJSON = (json) => {
-    if (json === undefined || json === null) {
-        return json;
-    }
-    return new Coverage({
-        title: json['title'],
-        file: json['file'],
-        branches: (0, __1.FunctionsFromJSON)(json['branches']),
-        functions: (0, __1.FunctionsFromJSON)(json['functions']),
-        lines: (0, __1.FunctionsFromJSON)(json['lines'])
-    });
-};
-exports.CoverageFromJSON = CoverageFromJSON;
-
-
-/***/ }),
-
-/***/ 6026:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.DetailsFromJSON = exports.Details = void 0;
-const runtime_1 = __nccwpck_require__(6184);
-class Details {
-    line;
-    hit;
-    block;
-    branch;
-    taken;
-    constructor({ line, hit, block, branch, taken }) {
-        this.line = line;
-        this.hit = hit;
-        this.block = block;
-        this.branch = branch;
-        this.taken = taken;
-    }
+function renderCheckSummary(report) {
+    return assemble([
+        () => renderHeader(report),
+        budget => renderFailures(report, budget, {
+            maxDetailed: Number.POSITIVE_INFINITY,
+            fullStack: true
+        }),
+        budget => renderLoadFailures(report, budget),
+        () => renderChangedLines(report, maxChangedFilesInComment)
+    ], renderMetadata(report), 'Some failures were omitted to fit the size limit of the check run.');
 }
-exports.Details = Details;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const DetailsFromJSON = (json) => {
-    if (json === undefined || json === null) {
-        return json;
-    }
-    return new Details({
-        line: (0, runtime_1.exists)(json, 'line') ? json['line'] : 0,
-        hit: json['hit'],
-        block: json['block'],
-        branch: json['branch'],
-        taken: json['taken']
-    });
-};
-exports.DetailsFromJSON = DetailsFromJSON;
-
-
-/***/ }),
-
-/***/ 1793:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.FunctionsFromJSON = exports.Functions = void 0;
-const runtime_1 = __nccwpck_require__(6184);
-class Functions {
-    hit;
-    found;
-    details;
-    constructor({ hit, found, details }) {
-        this.hit = hit;
-        this.found = found;
-        this.details = details;
-    }
+function renderCheckText(report) {
+    return assemble([
+        budget => renderTestFiles(report.tests, budget),
+        () => renderSlowest(report),
+        () => renderSkipped(report),
+        budget => renderUncoveredChangedLines(report.changedLines, budget),
+        () => renderLowestCoverage(report.coverage),
+        () => renderStderr(report)
+    ], '', 'Some sections were omitted to fit the size limit of the check run.');
 }
-exports.Functions = Functions;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const FunctionsFromJSON = (json) => {
-    if (json === undefined || json === null) {
-        return json;
-    }
-    return new Functions({
-        hit: (0, runtime_1.exists)(json, 'hit') ? json['hit'] : 0,
-        found: (0, runtime_1.exists)(json, 'found') ? json['found'] : 0,
-        details: json['details']
-    });
-};
-exports.FunctionsFromJSON = FunctionsFromJSON;
-
-
-/***/ }),
-
-/***/ 5852:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __exportStar = (this && this.__exportStar) || function(m, exports) {
-    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
-};
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-__exportStar(__nccwpck_require__(9192), exports);
-__exportStar(__nccwpck_require__(9917), exports);
-__exportStar(__nccwpck_require__(7718), exports);
-__exportStar(__nccwpck_require__(3078), exports);
-__exportStar(__nccwpck_require__(7148), exports);
-__exportStar(__nccwpck_require__(6026), exports);
-__exportStar(__nccwpck_require__(1793), exports);
-
-
-/***/ }),
-
-/***/ 2611:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.Reporter = void 0;
-class Reporter {
-    summary;
-    detail;
-    comment;
-    annotations;
-    status;
-    outputs;
-    constructor({ summary, detail, comment, annotations, status, outputs = {} }) {
-        this.summary = summary;
-        this.detail = detail;
-        this.comment = comment;
-        this.annotations = annotations;
-        this.status = status;
-        this.outputs = outputs;
-    }
+function renderStepSummary(report) {
+    return [renderCheckSummary(report), renderCheckText(report)]
+        .filter(Boolean)
+        .join('\n\n');
 }
-exports.Reporter = Reporter;
-
-
-/***/ }),
-
-/***/ 6184:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.exists = void 0;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const exists = (json, key) => {
-    const value = json[key];
-    return value !== null && value !== undefined;
-};
-exports.exists = exists;
-
-
-/***/ }),
-
-/***/ 9192:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.TestDoneFromJSON = exports.TestDone = void 0;
-const stateValues = (/* unused pure expression or super */ null && (['success', 'skipped', 'failure']));
-class TestDone {
-    id;
-    time;
-    state;
-    error;
-    stackTrace;
-    constructor({ id, time, state, error, stackTrace }) {
-        this.id = id;
-        this.time = time;
-        this.state = state;
-        this.error = error;
-        this.stackTrace = stackTrace;
-    }
-}
-exports.TestDone = TestDone;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const TestDoneFromJSON = (json) => {
-    const id = json['testID'];
-    const time = json['time'];
-    const state = json['result'] === 'success' ? 'success' : 'failure';
-    let error = json['error'];
-    if (error) {
-        error = error?.split('\n').join('');
-    }
-    const stackTrace = json['stackTrace'] ?? json['message'];
-    return new TestDone({
-        id,
-        time,
-        state,
-        error,
-        stackTrace
-    });
-};
-exports.TestDoneFromJSON = TestDoneFromJSON;
-
-
-/***/ }),
-
-/***/ 9917:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.TestGroupFromJSON = exports.TestGroup = void 0;
-class TestGroup {
-    id;
-    name;
-    suiteId;
-    testCount;
-    time;
-    tests;
-    constructor({ id, name, suiteId, testCount, time }) {
-        this.id = id;
-        this.name = name;
-        this.suiteId = suiteId;
-        this.testCount = testCount;
-        this.time = time;
-        this.tests = [];
-    }
-    toUnit() {
-        const lines = [];
-        for (const model of this.tests) {
-            lines.push(model.toUnit());
+function assemble(sections, footer, omitted) {
+    const reserved = footer.length + (omitted?.length ?? 0) + 8;
+    const parts = [];
+    let used = 0;
+    let wasOmitted = false;
+    for (const section of sections) {
+        const budget = exports.outputLimit - reserved - used;
+        const text = section(budget);
+        if (!text)
+            continue;
+        if (text.length > budget) {
+            wasOmitted = true;
+            continue;
         }
-        return lines.join('\n');
+        parts.push(text);
+        used += text.length + 2;
     }
+    if (wasOmitted && omitted)
+        parts.push(omitted);
+    if (footer)
+        parts.push(footer);
+    return parts.join('\n\n');
 }
-exports.TestGroup = TestGroup;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const TestGroupFromJSON = (json) => {
-    const id = json['group']['id'];
-    const name = json['group']['name'];
-    const suiteId = json['group']['suiteID'];
-    const testCount = json['group']['testCount'];
-    const time = json['time'];
-    return new TestGroup({ id, name, suiteId, testCount, time });
-};
-exports.TestGroupFromJSON = TestGroupFromJSON;
-
-
-/***/ }),
-
-/***/ 7718:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.TestStartFromJSON = exports.TestStart = void 0;
-const annotation_1 = __nccwpck_require__(5263);
-class TestStart {
-    id;
-    suiteId;
-    groupIds;
-    name;
-    url;
-    time;
-    skip;
-    line;
-    column;
-    result;
-    constructor({ id, suiteId, groupIds, name, url, skip, line, column, time }) {
-        this.id = id;
-        this.suiteId = suiteId;
-        this.groupIds = groupIds ?? [];
-        this.name = name;
-        this.url = url;
-        this.skip = skip;
-        this.line = line;
-        this.column = column;
-        this.time = time;
+function renderHeader(report) {
+    const icon = report.conclusion === 'success' ? '✅' : '❌';
+    const lines = [`## ${icon} ${(0, format_1.escapeMarkdown)(report.title)}`, ''];
+    if (report.tests) {
+        lines.push(testCounts(report.tests));
     }
-    get stateIcon() {
-        switch (this.result?.state) {
-            case 'success':
-                return ':white_check_mark:';
-            case 'skipped':
-                return ':wavy_dash:';
+    const coverage = coverageCounts(report.coverage, report.changedLines);
+    if (coverage) {
+        if (report.tests)
+            lines[lines.length - 1] += '  ';
+        lines.push(coverage);
+    }
+    if (report.problems.length > 0) {
+        lines.push('', '> [!CAUTION]');
+        for (const problem of report.problems) {
+            lines.push(`> ${problem}`);
         }
-        return ':x:';
     }
-    toAnnotation() {
-        if (!this.result)
-            return undefined;
-        if (this.result.state === 'success')
-            return undefined;
-        return new annotation_1.Annotation({
-            path: this.url,
-            start_line: this.line,
-            end_line: this.line,
-            annotation_level: 'failure',
-            message: this.result.error ?? '',
-            title: this.name,
-            raw_details: this.result.stackTrace
+    return lines.join('\n');
+}
+function testCounts(tests) {
+    const parts = [];
+    if (tests.failed > 0)
+        parts.push(`**${(0, format_1.formatNumber)(tests.failed)} failed**`);
+    if (tests.loadFailures.length > 0) {
+        parts.push(`**${(0, format_1.formatNumber)(tests.loadFailures.length)} failed to load**`);
+    }
+    parts.push(`${(0, format_1.formatNumber)(tests.passed)} passed`);
+    if (tests.skipped > 0)
+        parts.push(`${(0, format_1.formatNumber)(tests.skipped)} skipped`);
+    parts.push(`⏱ ${(0, format_1.formatDuration)(tests.durationMs)}`);
+    return parts.join(' · ');
+}
+function coverageCounts(coverage, changedLines) {
+    const parts = [];
+    if (coverage) {
+        let text = `Coverage **${(0, format_1.formatPercent)(coverage.lines.percent)}**`;
+        if (coverage.threshold !== undefined) {
+            text += ` (threshold ${coverage.threshold}%)`;
+        }
+        parts.push(text);
+        if (coverage.functions.found > 0) {
+            parts.push(`Functions ${(0, format_1.formatPercent)(coverage.functions.percent)}`);
+        }
+        if (coverage.branches.found > 0) {
+            parts.push(`Branches ${(0, format_1.formatPercent)(coverage.branches.percent)}`);
+        }
+    }
+    if (changedLines && changedLines.data.total > 0) {
+        let text = `Changed lines **${(0, format_1.formatPercent)(changedLines.percent)}** (${(0, format_1.formatNumber)(changedLines.data.covered)}/${(0, format_1.formatNumber)(changedLines.data.total)})`;
+        if (changedLines.threshold !== undefined) {
+            text += ` (threshold ${changedLines.threshold}%)`;
+        }
+        parts.push(text);
+    }
+    return parts.length > 0 ? parts.join(' · ') : undefined;
+}
+function renderFailures(report, budget, options) {
+    const failures = report.tests?.failures ?? [];
+    if (failures.length === 0)
+        return undefined;
+    const parts = [`### ❌ Failed tests (${(0, format_1.formatNumber)(failures.length)})`];
+    let used = parts[0].length;
+    let index = 0;
+    for (; index < failures.length && index < options.maxDetailed; index++) {
+        const text = renderFailure(failures[index], report, options);
+        // Leave room for listing the remaining failures by name.
+        if (used + text.length + 2 > budget - 2000)
+            break;
+        parts.push(text);
+        used += text.length + 2;
+    }
+    const rest = failures.slice(index);
+    if (rest.length > 0) {
+        const items = [];
+        for (const failure of rest) {
+            const item = `- ❌ **${(0, format_1.escapeMarkdown)(failure.name)}** — ${location(failure, report)}`;
+            if (used + item.length + 100 > budget)
+                break;
+            items.push(item);
+            used += item.length + 1;
+        }
+        if (items.length < rest.length) {
+            items.push(`- …and ${(0, format_1.formatNumber)(rest.length - items.length)} more`);
+        }
+        parts.push(index > 0
+            ? `Other failed tests:\n\n${items.join('\n')}`
+            : items.join('\n'));
+    }
+    return parts.join('\n\n');
+}
+function renderFailure(failure, report, options) {
+    const lines = [
+        `#### ${(0, format_1.escapeMarkdown)(failure.name)}`,
+        '',
+        `${location(failure, report)} · ${(0, format_1.formatDuration)(failure.test.durationMs)}`
+    ];
+    const { messages, output } = failureDetails(failure.test);
+    for (const message of messages.slice(0, maxErrorsPerTest)) {
+        lines.push('', (0, format_1.codeBlock)((0, format_1.truncateText)(message.text, maxMessageLines, maxMessageChars)));
+        const stack = options.fullStack
+            ? message.stackTrace.trim()
+            : (0, format_1.projectFrames)(message.stackTrace);
+        if (stack) {
+            lines.push('', (0, format_1.details)('Stack trace', (0, format_1.codeBlock)((0, format_1.truncateText)(stack, options.fullStack ? 100 : maxStackLines))));
+        }
+    }
+    if (messages.length > maxErrorsPerTest) {
+        lines.push('', `…and ${messages.length - maxErrorsPerTest} more errors`);
+    }
+    if (output.length > 0) {
+        lines.push('', (0, format_1.details)(`Output (${(0, format_1.formatNumber)(output.length)} lines)`, (0, format_1.codeBlock)((0, format_1.truncateText)(output.join('\n'), maxOutputLines, 4000))));
+    }
+    return lines.join('\n');
+}
+/**
+ * Picks the messages that explain a failure. For widget tests, Flutter prints
+ * the exception and reports only "Test failed. See exception logs above.", so
+ * the printed exception is used instead.
+ */
+function failureDetails(test) {
+    const { exceptions, output } = (0, format_1.splitExceptionReports)(test.prints);
+    const errors = test.errors.filter(e => !(0, format_1.isSeeLogsMessage)(e.message));
+    const stackTrace = test.errors[0]?.stackTrace ?? '';
+    const messages = errors.length > 0
+        ? errors.map(e => ({
+            text: (0, format_1.cleanErrorMessage)(e.message),
+            stackTrace: e.stackTrace
+        }))
+        : exceptions.map(text => ({
+            text: (0, format_1.cleanErrorMessage)(text),
+            stackTrace: (0, format_1.exceptionStack)(text) || stackTrace
+        }));
+    if (messages.length === 0 && test.errors.length > 0) {
+        messages.push({
+            text: (0, format_1.cleanErrorMessage)(test.errors[0].message),
+            stackTrace
         });
     }
-    toUnit() {
-        const lines = [
-            `<testcase classname="${this.name}" time="${this.time}">`
-        ];
-        if (this.result) {
-            if (this.result.state === 'failure') {
-                lines.push(`<failure type="failure" message="${this.escapeHtml(this.result.error ?? '')}">${this.escapeHtml(this.result.stackTrace ?? '')}</failure>`);
-            }
-        }
-        lines.push('</testcase>');
-        return lines.join('\n');
-    }
-    toDetail() {
-        if (this.result) {
-            return `| ${this.name} | ${this.stateIcon} | ${this.result.time} |`;
-        }
-        return '';
-    }
-    escapeHtml(unsafe) {
-        return unsafe
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-    }
+    return {
+        messages,
+        output: errors.length > 0 && test.prints.length > 0
+            ? test.prints.join('\n').split('\n')
+            : output
+    };
 }
-exports.TestStart = TestStart;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const TestStartFromJSON = (json) => {
-    const id = json['test']['id'];
-    const suiteId = json['test']['suiteID'];
-    const groupIds = json['test']['groupIDs'];
-    const name = json['test']['name'];
-    const url = json['test']['url'];
-    const skip = json['test']['metadata']['skip'];
-    const line = json['test']['line'];
-    const column = json['test']['column'];
-    const time = json['time'];
-    return new TestStart({
-        id,
-        suiteId,
-        groupIds,
-        name,
-        url,
-        skip,
-        line,
-        column,
-        time
+function renderLoadFailures(report, budget) {
+    const failures = report.tests?.loadFailures ?? [];
+    if (failures.length === 0)
+        return undefined;
+    const parts = [`### 💥 Failed to load (${(0, format_1.formatNumber)(failures.length)})`];
+    let used = parts[0].length;
+    for (const failure of failures) {
+        const text = renderLoadFailure(failure, report);
+        if (used + text.length + 2 > budget) {
+            parts.push(`…and ${failures.length - parts.length + 1} more`);
+            break;
+        }
+        parts.push(text);
+        used += text.length + 2;
+    }
+    return parts.join('\n\n');
+}
+function renderLoadFailure(failure, report) {
+    const url = failure.path ? (0, format_1.blobUrl)(report.links, failure.path) : undefined;
+    const name = `\`${failure.displayPath}\``;
+    const message = failure.errors
+        .map(e => (0, format_1.cleanErrorMessage)(e.message))
+        .join('\n\n');
+    return [
+        `#### ${url ? `[${name}](${url})` : name}`,
+        '',
+        (0, format_1.codeBlock)((0, format_1.truncateText)(message, maxMessageLines, maxMessageChars))
+    ].join('\n');
+}
+function renderChangedLines(report, maxFiles) {
+    const changed = report.changedLines?.data;
+    if (!changed)
+        return undefined;
+    const withGaps = changed.files
+        .filter(file => file.uncovered.length > 0)
+        .sort((a, b) => b.total - b.covered - (a.total - a.covered));
+    if (withGaps.length === 0 && changed.missingFiles.length === 0) {
+        return undefined;
+    }
+    const lines = ['### 📉 Changed lines without coverage'];
+    if (withGaps.length > 0) {
+        lines.push('', '| File | Covered | Uncovered lines |', '| ---- | ----: | ---- |');
+        for (const file of withGaps.slice(0, maxFiles)) {
+            lines.push(`| ${fileLink(file.path, report)} | ${file.covered}/${file.total} (${(0, format_1.formatPercent)((file.covered / file.total) * 100)}) | ${ranges(file.path, file.uncovered, report, 5)} |`);
+        }
+        if (withGaps.length > maxFiles) {
+            lines.push('', `…and ${withGaps.length - maxFiles} more files`);
+        }
+    }
+    const fullyCovered = changed.files.length - withGaps.length;
+    if (fullyCovered > 0) {
+        lines.push('', `${(0, format_1.formatNumber)(fullyCovered)} other changed ${fullyCovered === 1 ? 'file is' : 'files are'} fully covered.`);
+    }
+    if (changed.missingFiles.length > 0) {
+        lines.push('', `**Not loaded by any test** (these files are missing from the coverage report):`, '', ...changed.missingFiles
+            .slice(0, maxFiles)
+            .map(file => `- ${fileLink(file, report)}`));
+        if (changed.missingFiles.length > maxFiles) {
+            lines.push(`- …and ${changed.missingFiles.length - maxFiles} more`);
+        }
+    }
+    return lines.join('\n');
+}
+function renderSlowest(report) {
+    const slowest = report.tests?.slowest ?? [];
+    if (slowest.length === 0)
+        return undefined;
+    const rows = slowest.map(test => `| ${(0, format_1.escapeMarkdown)(test.name)} | ${location(test, report)} | ${(0, format_1.formatDuration)(test.test.durationMs)} |`);
+    return (0, format_1.details)(`🐢 Slowest tests (${slowest.length})`, ['| Test | File | Time |', '| ---- | ---- | ----: |', ...rows].join('\n'));
+}
+function renderSkipped(report) {
+    const skipped = report.tests?.skippedTests ?? [];
+    if (skipped.length === 0)
+        return undefined;
+    const items = skipped.slice(0, 50).map(test => {
+        const reason = test.test.skipReason
+            ? ` — ${(0, format_1.escapeMarkdown)(test.test.skipReason)}`
+            : '';
+        return `- ${(0, format_1.escapeMarkdown)(test.name)}${reason} (${location(test, report)})`;
     });
-};
-exports.TestStartFromJSON = TestStartFromJSON;
-
-
-/***/ }),
-
-/***/ 3078:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.TestSuiteFromJSON = exports.TestSuite = void 0;
-class TestSuite {
-    id;
-    path;
-    platform;
-    time;
-    groups;
-    constructor({ id, path, platform, time }) {
-        this.id = id;
-        this.path = path;
-        this.platform = platform;
-        this.time = time;
-        this.groups = [];
-    }
-    findTestStart(testId) {
-        const tests = this.groups.flatMap(g => g.tests);
-        return tests.find(test => test.id === testId);
-    }
-    findTestGroup(groupIds) {
-        return this.groups.find(g => groupIds.includes(g.id));
-    }
-    get hasError() {
-        const tests = this.groups.flatMap(g => g.tests);
-        return tests.filter(test => test.result?.state === 'failure').length > 0;
-    }
-    toUnit() {
-        const tests = this.groups.flatMap(g => g.tests);
-        const error = tests.filter(test => test.result?.state === 'failure');
-        const lines = [
-            `<testsuite id="${this.id}" package="${this.path}" tests="${tests.length}" failures="${error.length}" time="${this.time}">`
-        ];
-        for (const model of this.groups) {
-            lines.push(model.toUnit());
-        }
-        lines.push('</testsuite>');
-        return lines.join('\n');
-    }
-    toReport() {
-        const tests = this.groups.flatMap(g => g.tests);
-        const success = tests.filter(test => test.result?.state === 'success');
-        const error = tests.filter(test => test.result?.state === 'failure');
-        return `${this.path} tests: ${tests.length}  success: ${success.length} failures: ${error.length}`;
-    }
-    toSummary() {
-        const tests = this.groups.flatMap(g => g.tests);
-        const success = tests.filter(test => test.result?.state === 'success');
-        const error = tests.filter(test => test.result?.state === 'failure');
-        const icon = error.length > 0 ? ':x:' : ':white_check_mark:';
-        const line = [];
-        line.push(`#### ${icon} ${this.path}`);
-        line.push('');
-        line.push(`| tests | success | failures |`);
-        line.push(`| ---- | ---- | ---- |`);
-        line.push(`| ${tests.length}| ${success.length} | ${error.length} |`);
-        line.push('');
-        return line.join(`\n`);
-    }
-    toDetail() {
-        const tests = this.groups.flatMap(g => g.tests);
-        return tests
-            .map(test => test.toDetail())
-            .filter(line => line !== '')
-            .join('\n');
-    }
+    if (skipped.length > 50)
+        items.push(`- …and ${skipped.length - 50} more`);
+    return (0, format_1.details)(`⏭ Skipped tests (${skipped.length})`, items.join('\n'));
 }
-exports.TestSuite = TestSuite;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const TestSuiteFromJSON = (json) => {
-    const id = json['suite']['id'];
-    const platform = json['suite']['platform'];
-    const path = json['suite']['path'];
-    const time = json['time'];
-    return new TestSuite({ id, platform, path, time });
-};
-exports.TestSuiteFromJSON = TestSuiteFromJSON;
+function renderTestFiles(tests, budget) {
+    if (!tests || tests.files.length === 0)
+        return undefined;
+    const lines = [
+        '### Test files',
+        '',
+        '| File | Tests | ✅ | ❌ | ⏭ | Time |',
+        '| ---- | ----: | ----: | ----: | ----: | ----: |'
+    ];
+    let used = lines.join('\n').length;
+    let shown = 0;
+    for (const file of tests.files) {
+        const row = `| ${file.path ? `\`${file.path}\`` : `\`${file.displayPath}\``} | ${file.total} | ${file.passed} | ${file.failed} | ${file.skipped} | ${(0, format_1.formatDuration)(file.durationMs)} |`;
+        if (used + row.length + 200 > budget)
+            break;
+        lines.push(row);
+        used += row.length + 1;
+        shown++;
+    }
+    if (shown < tests.files.length) {
+        lines.push('', `…and ${tests.files.length - shown} more files`);
+    }
+    return lines.join('\n');
+}
+function renderUncoveredChangedLines(changedLines, budget) {
+    const files = changedLines?.data.files.filter(f => f.uncovered.length > 0);
+    if (!files || files.length === 0)
+        return undefined;
+    const lines = ['### Uncovered changed lines', ''];
+    let used = lines.join('\n').length;
+    for (const file of files) {
+        const item = `- \`${file.path}\`: ${file.uncovered.map(formatRange).join(', ')}`;
+        if (used + item.length + 100 > budget) {
+            lines.push('- …');
+            break;
+        }
+        lines.push(item);
+        used += item.length + 1;
+    }
+    return lines.join('\n');
+}
+function renderLowestCoverage(coverage) {
+    const files = coverage?.files.filter(file => file.hit < file.found) ?? [];
+    if (files.length === 0)
+        return undefined;
+    const rows = files
+        .slice(0, maxLowestCoverageFiles)
+        .map(file => `| \`${file.path ?? file.displayPath}\` | ${file.hit}/${file.found} | ${(0, format_1.formatPercent)(file.percent)} |`);
+    return [
+        `### Lowest coverage files`,
+        '',
+        '| File | Lines | Coverage |',
+        '| ---- | ----: | ----: |',
+        ...rows
+    ].join('\n');
+}
+function renderStderr(report) {
+    if (report.stderrTail.length === 0)
+        return undefined;
+    if (report.exitCode === undefined || report.exitCode === 0)
+        return undefined;
+    return [
+        `### stderr (last ${report.stderrTail.length} lines)`,
+        '',
+        (0, format_1.codeBlock)((0, format_1.truncateChars)(report.stderrTail.join('\n'), 8000))
+    ].join('\n');
+}
+function renderFooter(report) {
+    const links = [];
+    if (report.links?.checkRunUrl) {
+        links.push(`[Full report](${report.links.checkRunUrl})`);
+    }
+    const commit = (0, format_1.commitUrl)(report.links);
+    if (commit && report.links) {
+        links.push(`Commit [\`${report.links.sha.substring(0, 7)}\`](${commit})`);
+    }
+    if (report.links?.runUrl) {
+        links.push(`[Workflow run](${report.links.runUrl})`);
+    }
+    return links.length > 0 ? `<sub>${links.join(' · ')}</sub>` : '';
+}
+function omittedNote(report) {
+    const url = report.links?.checkRunUrl;
+    return url
+        ? `Some sections were omitted to fit the size limit. See the [full report](${url}).`
+        : 'Some sections were omitted to fit the size limit. See the check run for the full report.';
+}
+function renderMetadata(report) {
+    const data = {
+        version: 1,
+        conclusion: report.conclusion,
+        tests: report.tests && {
+            total: report.tests.total,
+            passed: report.tests.passed,
+            failed: report.tests.failed,
+            skipped: report.tests.skipped,
+            loadFailures: report.tests.loadFailures.length,
+            durationMs: report.tests.durationMs
+        },
+        coverage: report.coverage && {
+            hit: report.coverage.lines.hit,
+            found: report.coverage.lines.found
+        },
+        changedLines: report.changedLines && {
+            covered: report.changedLines.data.covered,
+            total: report.changedLines.data.total
+        }
+    };
+    return `<!-- flutter-test-action-data ${JSON.stringify(data)} -->`;
+}
+function location(test, report) {
+    const label = `\`${test.displayPath}${test.line ? `:${test.line}` : ''}\``;
+    const url = test.path
+        ? (0, format_1.blobUrl)(report.links, test.path, test.line)
+        : undefined;
+    return url ? `[${label}](${url})` : label;
+}
+function fileLink(path, report) {
+    const url = (0, format_1.blobUrl)(report.links, path);
+    return url ? `[\`${path}\`](${url})` : `\`${path}\``;
+}
+function ranges(path, uncovered, report, max) {
+    const items = uncovered.slice(0, max).map(range => {
+        const url = (0, format_1.blobUrl)(report.links, path, range.start, range.end);
+        return url ? `[${formatRange(range)}](${url})` : formatRange(range);
+    });
+    if (uncovered.length > max)
+        items.push(`+${uncovered.length - max} more`);
+    return items.join(', ');
+}
+function formatRange(range) {
+    return range.start === range.end
+        ? `L${range.start}`
+        : `L${range.start}-${range.end}`;
+}
 
 
 /***/ }),
 
-/***/ 4883:
+/***/ 562:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -1357,167 +1833,104 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.Parser = void 0;
-const reporter_1 = __nccwpck_require__(2611);
-const model_1 = __nccwpck_require__(5852);
-const xml_formatter_1 = __importDefault(__nccwpck_require__(5313));
+exports.testEnvironment = testEnvironment;
+exports.buildCommandLine = buildCommandLine;
+exports.runFlutterTest = runFlutterTest;
 const fs_1 = __nccwpck_require__(9896);
-const { readFile } = fs_1.promises;
-class Parser {
-    inputPath;
-    tests = [];
-    constructor(inputPath) {
-        this.inputPath = inputPath;
+const events_1 = __nccwpck_require__(4434);
+const path_1 = __importDefault(__nccwpck_require__(6928));
+const stderrTailSize = 50;
+// Credentials the runner hands to JavaScript actions. A plain `run:` step does
+// not receive them, so the tests should not either.
+const secretEnvNames = new Set([
+    'ACTIONS_RUNTIME_TOKEN',
+    'ACTIONS_ID_TOKEN_REQUEST_TOKEN',
+    'ACTIONS_ID_TOKEN_REQUEST_URL'
+]);
+function testEnvironment(env = process.env) {
+    const result = {};
+    for (const [name, value] of Object.entries(env)) {
+        if (value === undefined)
+            continue;
+        if (name.startsWith('INPUT_') || secretEnvNames.has(name))
+            continue;
+        result[name] = value;
     }
-    async _load() {
-        const buf = await readFile(this.inputPath);
-        return Buffer.from(buf).toString('utf8');
-    }
-    async parseObject() {
-        const file = await this._load();
-        const lines = file.split(/\r?\n/u).filter(line => line.length > 0);
-        for (const line of lines) {
-            this._parseLine(line);
-        }
-    }
-    _parseLine(line) {
-        try {
-            const json = JSON.parse(line);
-            if (json['type']) {
-                this._parseTestSuite(json);
-                this._parseTestGroup(json);
-                this._parseTestStart(json);
-                this._parseTestError(json);
-                this._parseTestMessage(json);
-                this._parseTestDone(json);
-            }
-        }
-        catch (error) {
-            throw new Error(`Failed to parse machine output: ${error.message}`);
-        }
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    _parseTestSuite(line) {
-        if (line['type'] === 'suite') {
-            this.tests.push((0, model_1.TestSuiteFromJSON)(line));
-        }
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    _parseTestGroup(line) {
-        if (line['type'] === 'group') {
-            const group = (0, model_1.TestGroupFromJSON)(line);
-            const test = this.tests.find(t => t.id === group.suiteId);
-            if (!test)
-                return;
-            test.groups.push(group);
-        }
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    _parseTestStart(line) {
-        if (line['type'] === 'testStart') {
-            const name = line['test']['name'];
-            if (name.startsWith('loading /')) {
-                return;
-            }
-            const start = (0, model_1.TestStartFromJSON)(line);
-            const test = this.tests.find(t => t.id === start.suiteId);
-            if (!test)
-                return;
-            const group = test.findTestGroup(start.groupIds);
-            if (!group)
-                return;
-            group.tests.push(start);
-        }
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    _parseTestError(line) {
-        if (line['type'] === 'error') {
-            this._checkResult((0, model_1.TestDoneFromJSON)(line));
-        }
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    _parseTestMessage(line) {
-        if (line['type'] === 'print') {
-            this._checkResult((0, model_1.TestDoneFromJSON)(line));
-        }
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    _parseTestDone(line) {
-        if (line['type'] === 'testDone') {
-            this._checkResult((0, model_1.TestDoneFromJSON)(line));
-        }
-    }
-    _checkResult(result) {
-        const test = this.tests.find(t => t.findTestStart(result.id));
-        if (!test)
-            return;
-        const start = test.findTestStart(result.id);
-        if (!start)
-            return;
-        if (!start.result) {
-            start.result = result;
-        }
-        else if (result.error) {
-            start.result.error = result.error;
-        }
-        else if (result.stackTrace) {
-            start.result.stackTrace = result.stackTrace;
-        }
-    }
-    toUnit() {
-        const lines = [
-            `<?xml version="1.0" encoding="UTF-8"?>`,
-            '<testsuites>'
-        ];
-        for (const model of this.tests) {
-            lines.push(model.toUnit());
-        }
-        lines.push('</testsuites>');
-        return (0, xml_formatter_1.default)(lines.join('\n'));
-    }
-    toReport() {
-        const summary = this.tests.map(test => test.toSummary());
-        const detail = [
-            '### Unit Test',
-            '',
-            '|Test|Status|Time|',
-            '|----|----|----|'
-        ];
-        const allTests = this.tests.flatMap(test => test.groups.flatMap(g => g.tests));
-        const detailColumn = allTests.map(test => test.toDetail());
-        const annotations = allTests
-            .map(test => test.toAnnotation())
-            .filter(a => a !== undefined);
-        const status = allTests.filter(t => t.result?.state === 'failure').length > 0
-            ? 'failure'
-            : 'success';
-        const icon = status === 'success' ? ':white_check_mark:' : ':x:';
-        const comment = [];
-        comment.push(`#### ${icon} Unit Test`);
-        comment.push('');
-        comment.push(`| Test | Success | Failure |`);
-        comment.push(`| ---- | ---- | ---- |`);
-        comment.push(`| ${allTests.length}| ${allTests.filter(t => t.result?.state === 'success').length} | ${allTests.filter(t => t.result?.state === 'failure').length} |`);
-        comment.push('');
-        return new reporter_1.Reporter({
-            summary: summary.join(''),
-            detail: detail.concat(detailColumn).join('\n'),
-            comment: comment.join('\n'),
-            annotations,
-            status,
-            outputs: {
-                tests: allTests.length.toString(),
-                passed: allTests
-                    .filter(t => t.result?.state === 'success')
-                    .length.toString(),
-                failed: allTests
-                    .filter(t => t.result?.state === 'failure')
-                    .length.toString()
+    return result;
+}
+function buildCommandLine(options) {
+    const parts = [options.flutterCommand, 'test', '--machine'];
+    if (options.coverage)
+        parts.push('--coverage');
+    if (options.testArgs.trim())
+        parts.push(options.testArgs.trim());
+    return parts.join(' ');
+}
+async function runFlutterTest(options) {
+    const [core, { exec }] = await Promise.all([
+        Promise.all(/* import() */[__nccwpck_require__.e(662), __nccwpck_require__.e(475), __nccwpck_require__.e(383)]).then(__nccwpck_require__.bind(__nccwpck_require__, 2383)),
+        __nccwpck_require__.e(/* import() */ 475).then(__nccwpck_require__.bind(__nccwpck_require__, 1475))
+    ]);
+    const cwd = path_1.default.resolve(options.workingDirectory || '.');
+    const commandLine = buildCommandLine(options);
+    const output = (0, fs_1.createWriteStream)(options.outputPath, { encoding: 'utf8' });
+    const stderrTail = [];
+    core.info(`Running: ${commandLine} (in ${cwd})`);
+    let exitCode;
+    try {
+        exitCode = await exec(commandLine, [], {
+            cwd,
+            env: testEnvironment(),
+            ignoreReturnCode: true,
+            // The machine output is thousands of JSON lines. Only the plain output
+            // is shown in the log.
+            silent: true,
+            listeners: {
+                stdline: line => {
+                    if (isJsonLine(line)) {
+                        output.write(`${line}\n`);
+                    }
+                    else if (line.trim()) {
+                        core.info(line);
+                    }
+                },
+                errline: line => {
+                    core.info(line);
+                    stderrTail.push(line);
+                    if (stderrTail.length > stderrTailSize)
+                        stderrTail.shift();
+                }
             }
         });
     }
+    finally {
+        output.end();
+        await (0, events_1.once)(output, 'close');
+    }
+    let coveragePath;
+    if (options.coverage) {
+        const lcov = path_1.default.join(cwd, 'coverage', 'lcov.info');
+        if ((0, fs_1.existsSync)(lcov)) {
+            coveragePath = lcov;
+        }
+        else {
+            core.warning(`Coverage was enabled, but ${lcov} was not created.`);
+        }
+    }
+    return { exitCode, machinePath: options.outputPath, coveragePath, stderrTail };
 }
-exports.Parser = Parser;
+function isJsonLine(line) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('['))
+        return false;
+    try {
+        JSON.parse(trimmed);
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
 
 
 /***/ }),
@@ -1786,6 +2199,14 @@ module.exports = require("tls");
 
 /***/ }),
 
+/***/ 7016:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("url");
+
+/***/ }),
+
 /***/ 9023:
 /***/ ((module) => {
 
@@ -1957,59 +2378,13 @@ module.exports = require("util");
 /******/ 	})();
 /******/ 	
 /************************************************************************/
-var __webpack_exports__ = {};
-// This entry need to be wrapped in an IIFE because it need to be in strict mode.
-(() => {
-"use strict";
-var exports = __webpack_exports__;
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-const coverage_1 = __nccwpck_require__(7474);
-const parser_1 = __nccwpck_require__(4883);
-const formatter_1 = __nccwpck_require__(3196);
-function parseCoverageThreshold(value) {
-    const threshold = Number(value);
-    if (Number.isNaN(threshold) || threshold < 0 || threshold > 100) {
-        throw new Error('coverageThreshold must be a number between 0 and 100.');
-    }
-    return threshold;
-}
-async function run() {
-    try {
-        const core = await Promise.all(/* import() */[__nccwpck_require__.e(662), __nccwpck_require__.e(623)]).then(__nccwpck_require__.bind(__nccwpck_require__, 7623));
-        let parser;
-        let coverage;
-        const machinePath = core.getInput('machinePath');
-        const coveragePath = core.getInput('coveragePath');
-        if (!machinePath && !coveragePath) {
-            throw new Error('Either machinePath or coveragePath must be provided.');
-        }
-        if (machinePath) {
-            parser = new parser_1.Parser(machinePath);
-            await parser.parseObject();
-        }
-        if (coveragePath) {
-            coverage = new coverage_1.CoverageParser(coveragePath);
-            await coverage.parseObject();
-        }
-        const coverageThreshold = parseCoverageThreshold(core.getInput('coverageThreshold') || '80');
-        await (0, formatter_1.exportReport)({
-            report: parser?.toReport(),
-            coverage: coverage?.toReport(coverageThreshold)
-        });
-    }
-    catch (error) {
-        if (error instanceof Error) {
-            const core = await Promise.all(/* import() */[__nccwpck_require__.e(662), __nccwpck_require__.e(623)]).then(__nccwpck_require__.bind(__nccwpck_require__, 7623));
-            core.setFailed(`${error.name}:${error.message}\n\n${error.stack}`);
-        }
-    }
-}
-run();
-
-})();
-
-module.exports = __webpack_exports__;
+/******/ 	
+/******/ 	// startup
+/******/ 	// Load entry module and return exports
+/******/ 	// This entry module is referenced by other modules so it can't be inlined
+/******/ 	var __webpack_exports__ = __nccwpck_require__(7353);
+/******/ 	module.exports = __webpack_exports__;
+/******/ 	
 /******/ })()
 ;
 //# sourceMappingURL=index.js.map

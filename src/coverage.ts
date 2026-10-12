@@ -1,78 +1,67 @@
-import {Coverage, CoverageFromJSON} from './model'
-import {Reporter} from './model/reporter'
+import {CoverageCount, CoverageData, FileCoverage} from './model/coverage'
 // eslint-disable-next-line import/no-commonjs, @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
 const parse = require('lcov-parse')
 
-export class CoverageParser {
-  readonly inputPath: string
-  results: Coverage[] | undefined
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
-  constructor(inputPath: string) {
-    this.inputPath = inputPath
-  }
-
-  async parseObject(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      parse(this.inputPath, (error: Error | null, info: any) => {
-        if (error) {
-          reject(error)
-          return
-        }
-        this.results = info.map(CoverageFromJSON)
-        resolve()
-      })
-    })
-  }
-
-  toReport(threshold = 80): Reporter {
-    const results = this.results?.flatMap(r => r.lines)
-    if (!results) {
-      return new Reporter({
-        summary: '',
-        detail: '',
-        comment: '',
-        annotations: [],
-        status: 'failure',
-        outputs: {}
-      })
-    }
-
-    const summary: string[] = ['### Coverage\n'].concat(
-      this.results?.map(f => f.toSummary()) ?? []
-    )
-
-    const summaryCount = {hit: 0, found: 0}
-    for (const line of results) {
-      summaryCount.hit += line.hit
-      summaryCount.found += line.found
-    }
-
-    const state =
-      summaryCount.found > 0
-        ? Math.round((summaryCount.hit / summaryCount.found) * 1000) / 10
-        : 0
-    const icon = state >= threshold ? ':white_check_mark:' : ':x:'
-
-    const comment: string[] = []
-    comment.push(`#### ${icon} Coverage`)
-    comment.push('')
-    comment.push(`| Hit | Found | State |`)
-    comment.push(`| ---- | ---- | ---- |`)
-    comment.push(`| ${summaryCount.hit}| ${summaryCount.found} | ${state} |`)
-    comment.push('')
-
-    return new Reporter({
-      summary: summary.join(''),
-      detail: '',
-      comment: comment.join('\n'),
-      annotations: [],
-      status: state >= threshold ? 'success' : 'failure',
-      outputs: {
-        coverage: state.toFixed(1),
-        'coverage-hit': summaryCount.hit.toString(),
-        'coverage-found': summaryCount.found.toString()
+export async function parseLcovFile(path: string): Promise<CoverageData> {
+  const records = await new Promise<any[]>((resolve, reject) => {
+    parse(path, (error: unknown, info: any[]) => {
+      if (error) {
+        reject(
+          new Error(`Failed to parse coverage file ${path}: ${String(error)}`)
+        )
+        return
       }
+      resolve(info)
     })
+  })
+
+  return toCoverageData(records)
+}
+
+export function toCoverageData(records: any[]): CoverageData {
+  const files = records.filter(Boolean).map(toFileCoverage)
+
+  return {
+    files,
+    lines: sum(files.map(f => f.lines)),
+    functions: sum(files.map(f => f.functions)),
+    branches: sum(files.map(f => f.branches))
   }
+}
+
+export function percentage({hit, found}: CoverageCount): number | undefined {
+  if (found === 0) return undefined
+  return Math.floor((hit / found) * 1000) / 10
+}
+
+function toFileCoverage(record: any): FileCoverage {
+  const lineHits = new Map<number, number>()
+  for (const detail of record['lines']?.['details'] ?? []) {
+    const line = Number(detail['line'])
+    lineHits.set(line, (lineHits.get(line) ?? 0) + Number(detail['hit'] ?? 0))
+  }
+
+  return {
+    path: record['file'],
+    lineHits,
+    lines: toCount(record['lines']),
+    functions: toCount(record['functions']),
+    branches: toCount(record['branches'])
+  }
+}
+
+function toCount(json: any): CoverageCount {
+  return {hit: Number(json?.['hit'] ?? 0), found: Number(json?.['found'] ?? 0)}
+}
+
+function sum(counts: CoverageCount[]): CoverageCount {
+  return counts.reduce(
+    (total, count) => ({
+      hit: total.hit + count.hit,
+      found: total.found + count.found
+    }),
+    {hit: 0, found: 0}
+  )
 }
