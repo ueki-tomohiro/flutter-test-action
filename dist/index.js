@@ -481,7 +481,7 @@ function readInputs(core) {
     };
 }
 async function run() {
-    const core = await Promise.all(/* import() */[__nccwpck_require__.e(662), __nccwpck_require__.e(475), __nccwpck_require__.e(383)]).then(__nccwpck_require__.bind(__nccwpck_require__, 2383));
+    const core = await Promise.all(/* import() */[__nccwpck_require__.e(894), __nccwpck_require__.e(475), __nccwpck_require__.e(383)]).then(__nccwpck_require__.bind(__nccwpck_require__, 2383));
     try {
         const inputs = readInputs(core);
         const paths = (0, paths_1.createPathContext)(inputs.workingDirectory);
@@ -517,7 +517,7 @@ async function run() {
             ? await (0, coverage_1.parseLcovFile)(coveragePath)
             : undefined;
         // The context gives the links in the report even without a token.
-        const github = await Promise.all(/* import() */[__nccwpck_require__.e(662), __nccwpck_require__.e(573)]).then(__nccwpck_require__.bind(__nccwpck_require__, 2573));
+        const github = await Promise.all(/* import() */[__nccwpck_require__.e(894), __nccwpck_require__.e(573)]).then(__nccwpck_require__.bind(__nccwpck_require__, 2573));
         const context = (0, github_1.readContext)(github);
         const octokit = inputs.token ? github.getOctokit(inputs.token) : undefined;
         let changedLines;
@@ -1868,7 +1868,7 @@ function buildCommandLine(options) {
 }
 async function runFlutterTest(options) {
     const [core, { exec }] = await Promise.all([
-        Promise.all(/* import() */[__nccwpck_require__.e(662), __nccwpck_require__.e(475), __nccwpck_require__.e(383)]).then(__nccwpck_require__.bind(__nccwpck_require__, 2383)),
+        Promise.all(/* import() */[__nccwpck_require__.e(894), __nccwpck_require__.e(475), __nccwpck_require__.e(383)]).then(__nccwpck_require__.bind(__nccwpck_require__, 2383)),
         __nccwpck_require__.e(/* import() */ 475).then(__nccwpck_require__.bind(__nccwpck_require__, 1475))
     ]);
     const cwd = path_1.default.resolve(options.workingDirectory || '.');

@@ -323,8 +323,8 @@ class DecodedURL extends URL {
 //# sourceMappingURL=proxy.js.map
 // EXTERNAL MODULE: ./node_modules/.pnpm/tunnel@0.0.6/node_modules/tunnel/index.js
 var tunnel = __webpack_require__(329);
-// EXTERNAL MODULE: ./node_modules/.pnpm/undici@6.24.1/node_modules/undici/index.js
-var undici = __webpack_require__(5134);
+// EXTERNAL MODULE: ./node_modules/.pnpm/undici@6.29.0/node_modules/undici/index.js
+var undici = __webpack_require__(2518);
 ;// CONCATENATED MODULE: ./node_modules/.pnpm/@actions+http-client@4.0.0/node_modules/@actions/http-client/lib/index.js
 /* eslint-disable @typescript-eslint/no-explicit-any */
 var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
