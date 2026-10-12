@@ -2,6 +2,7 @@
   "compilerOptions": {
     "target": "es2022",                       /* Specify ECMAScript target version. */
     "lib": ["es2022"],                        /* Use modern built-in types required by current dependencies. */
+    "types": ["node"],                        /* TypeScript 6 no longer includes @types/* automatically. */
     "module": "node16",                       /* Emit CommonJS while preserving native import() for ESM-only packages. */
     "moduleResolution": "node16",             /* Resolve package exports used by modern @actions/* packages. */
     "outDir": "./lib",                        /* Redirect output structure to the directory. */

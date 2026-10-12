@@ -30,6 +30,7 @@ jobs:
       contents: read
       checks: write
       issues: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v6
       - uses: ./
