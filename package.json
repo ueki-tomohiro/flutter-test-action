@@ -40,7 +40,7 @@
     "@types/node": "^25.5.2",
     "@vercel/ncc": "^0.38.4",
     "globals": "^17.4.0",
-    "lefthook": "^2.1.5",
+    "lefthook": "^2.2.2",
     "oxfmt": "^0.71.0",
     "oxlint": "^1.86.0",
     "oxlint-tsgolint": "^7.0.2003",
